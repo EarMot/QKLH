@@ -1,0 +1,2526 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <link rel="icon" href="https://files.getquicker.net/_userFiles/59771/avata_20221106024131.jpg" type="image/png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>局域网文件共享门户</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f5f7; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        #upload-status { display: none; position: relative; background: rgba(251, 211, 141, 0.4); border-radius: 8px; font-size: 13px; color: #9c4221; width: 400px; height: 38px; overflow: hidden; font-weight: 600; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); border: 1px solid rgba(237, 137, 54, 0.2); }
+        #upload-progress-fill { position: absolute; left: 0; top: 0; height: 100%; background: rgba(237, 137, 54, 0.45); transition: width 0.2s linear; z-index: 1; border-right: 2px solid rgba(237, 137, 54, 0.7); }
+        #upload-text-container { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-start; height: 100%; padding: 0 15px; gap: 15px; }
+        .up-size { margin-left: auto; color: #7b341e; font-size: 12px; font-weight: 500; }
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #edf2f7; padding-bottom: 15px; }
+        .timer-box { font-size: 14px; font-weight: 500; color: #718096; background: #edf2f7; padding: 6px 12px; border-radius: 20px; }
+        .timer-box span { color: #e53e3e; font-weight: bold; font-family: monospace; font-size: 15px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th, td { border-bottom: 1px solid #edf2f7; padding: 12px; text-align: left; vertical-align: middle; word-break: break-all; overflow-wrap: break-word; }
+        th { background-color: #f8fafc; font-weight: 600; color: #4a5568; user-select: none; }
+        .sortable { cursor: pointer; transition: background 0.2s; }
+        .sortable:hover { background-color: #edf2f7; }
+        .sort-icon { font-size: 11px; color: #a0aec0; margin-left: 4px; }
+        tr:hover { background-color: #f8fafc; }
+        .preview { max-width: 60px; max-height: 60px; border-radius: 6px; object-fit: cover; border: 1px solid #e2e8f0; }
+        .actions { margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;}
+        button { padding: 8px 16px; border: none; border-radius: 6px; background-color: #4299e1; color: white; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; white-space: nowrap; }
+        button:hover:not(:disabled) { background-color: #3182ce; transform: translateY(-1px); }
+        .btn-download { background-color: #48bb78; } .btn-download:hover:not(:disabled) { background-color: #38a169; }
+        .btn-upload { background-color: #ed8936; } .btn-upload:hover:not(:disabled) { background-color: #dd6b20; }
+        .btn-icon { width: 44px; height: 36px; padding: 0; display: inline-flex; justify-content: center; align-items: center; font-size: 16px; }
+        .name-path-cell { width: auto; max-width: 250px; }
+        .file-name-title { font-weight: 500; cursor: default; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; line-height: 1.4; max-height: 2.8em; }
+        .path-info { font-size: 12px; color: #a0aec0; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+        /* 画廊样式 - 修改了 z-index 保证在源码窗口之上 */
+        .lightbox { display: none; position: fixed; inset: 0; z-index: 10010; background-color: rgba(0,0,0,0.92); backdrop-filter: blur(5px); overflow: hidden; touch-action: none; }
+        .lb-track { display: flex; width: 100%; height: 100%; transform: translateX(-100vw); will-change: transform; }
+        .lb-slide { flex: 0 0 100vw; width: 100vw; height: 100%; display: flex; align-items: center; justify-content: center; }
+        .lb-img { width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; transition: transform 0.3s ease; }
+        .lb-img.rotated { transform: rotate(90deg); width: 100vh !important; height: 100vw !important; max-width: none !important; max-height: none !important; }
+        .lb-btn { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 36px; cursor: pointer; user-select: none; padding: 10px 15px; background: rgba(0,0,0,0.3); border-radius: 8px; z-index: 10011; }
+        .lb-prev { left: 10px; } .lb-next { right: 10px; }
+        .lb-counter { position: fixed; top: 15px; left: 15px; color: #fff; font-size: 13px; font-weight: bold; font-family: monospace; background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 15px; z-index: 10011; border: 1px solid rgba(255,255,255,0.2); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .lb-close-btn { position: fixed; top: 15px; right: 15px; width: 42px; height: 42px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; color: #fff; font-size: 18px; font-weight: bold; cursor: pointer; z-index: 10011; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; outline: none; transition: background 0.2s, transform 0.1s; }
+        .lb-close-btn:hover { background: rgba(255,255,255,0.25); }
+        .lb-close-btn:active { background: rgba(255,255,255,0.4); transform: scale(0.92); }
+        .lb-rotate-btn { position: fixed; bottom: 20px; right: 20px; width: 50px; height: 50px; background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.25); border-radius: 14px; color: #fff; font-size: 22px; cursor: pointer; z-index: 10011; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; outline: none; transition: background 0.2s, transform 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        .lb-rotate-btn:hover { background: rgba(255,255,255,0.2); }
+        .lb-rotate-btn:active { background: rgba(255,255,255,0.35); transform: scale(0.92); }
+        .chat-bubble { padding: 8px 12px; border-radius: 12px; max-width: 80%; word-break: break-all; font-size: 14px; white-space: pre-wrap; line-height: 1.4; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .chat-bubble.mine { background-color: #d1e8ff; border-bottom-right-radius: 2px; }
+        .chat-bubble.other { background-color: #f1f0f0; border-bottom-left-radius: 2px; }
+        .chat-bubble img { max-width: 100%; max-height: 200px; border-radius: 6px; margin: 4px 0; display: block; cursor: pointer; transition: transform 0.2s; }
+        .chat-bubble img:hover { transform: scale(1.02); }
+/* 强制聊天气泡内的所有元素（除多媒体外）高度自适应，防止外来粘贴的固定 height 导致内容溢出 */
+.chat-bubble *:not(img, video, svg, canvas) {
+    height: auto !important;
+    min-height: auto !important;
+}
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10005; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast-msg { background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); color: white; padding: 12px 20px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0; animation: toastFadeIn 0.3s forwards; pointer-events: auto; cursor: pointer; max-width: 85vw; word-break: break-all; line-height: 1.5; text-align: left; white-space: pre-wrap; }
+        @keyframes toastFadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toastFadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-20px); } }
+
+        .port-link { color: #ed8936; font-weight: bold; cursor: pointer; text-decoration: underline; margin-left: 2px; }
+        .port-link:hover { color: #dd6b20; }
+        .folder-group { border-left: 3px solid #4299e1; background: #fdfdfd; }
+        .file-item { transition: background 0.3s; }
+        .file-item.new-upload { background: #ebf8ff; }
+
+        /* 富文本编辑框 Placeholder 与拖拽提示样式 */
+        #chat-input:empty::before { content: attr(data-placeholder); color: #a0aec0; cursor: text; }
+        #chat-input.drag-over { border-color: #4299e1 !important; background-color: #ebf8ff !important; }
+        
+        /* 聊天输入框精致细长滚动条样式(新增鼠标样式控制) */
+        #chat-input::-webkit-scrollbar { width: 4px; cursor: default; }
+        #chat-input::-webkit-scrollbar-track { background: transparent; cursor: default; }
+        #chat-input::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 4px; cursor: default; }
+        #chat-input::-webkit-scrollbar-thumb:hover { background: #a0aec0; cursor: default; }
+
+        /* ---------------- 新增：拖拽提示遮罩UI (防抖优化版) ---------------- */
+        
+        /* === A. 聊天记录区拖拽遮罩 (纯净背景，彻底屏蔽子元素) === */
+        #chat-body.drag-over-body { 
+            background-color: #ebf8ff !important; 
+            /* 移除了 overflow:hidden，无需阻止默认滚动，因为我们不再在内部生成提示文字 */
+        }
+        #chat-body.drag-over-body * {
+            pointer-events: none !important; /* 继续保持屏蔽子元素鼠标穿透 */
+        }
+
+        /* === B. 输入框拖拽遮罩 (Tooltip外部底部悬浮) === */
+        #chat-input.drag-over { 
+            background-color: #ebf8ff !important; 
+        }
+        #chat-input-wrapper.drag-over { 
+            border-color: #4299e1 !important; 
+        }
+        #chat-input-wrapper.drag-over::after {
+            content: "📥 松开插入 图片 / 文本";
+            position: absolute;
+            z-index: 10015; 
+            bottom: -38px; 
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 14, 0.85); 
+            color: #fff;
+            border: 1px solid #29B6F6; 
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: tooltipFadeIn 0.2s ease forwards;
+        }
+
+        @keyframes tooltipFadeIn {
+            from { opacity: 0; transform: translate(-50%, -10px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        
+        /* === C. 聊天区独立悬浮提示 (通过 JS 动态定位) === */
+        #chat-body-drop-tooltip {
+            display: none; /* 默认隐藏 */
+            position: fixed; /* 关键：固定定位，脱离所有容器的限制 */
+            z-index: 10020;
+            background: rgba(15, 15, 14, 0.85); 
+            color: #fff;
+            border: 1px solid #29B6F6; 
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 18px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none; /* 防止遮挡拖拽事件 */
+            box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+            transform: translate(-50%, -50%);
+            animation: tooltipFadeIn 0.2s ease forwards;
+        }
+
+/* ==== 新增：上传列表窗口与霓虹进度条样式 ==== */
+        .neon-progress {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 0%;
+            background: rgba(237, 137, 54, 0.45); /* 果冻橙色半透明通透 */
+            border-right: 2px solid rgba(237, 137, 54, 0.8);
+            box-shadow: 0 0 10px rgba(237, 137, 54, 0.6);
+            transition: width 0.3s linear;
+            z-index: 2; /* 确保进度在文字上面 */
+            pointer-events: none;
+        }
+        .neon-progress::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: inherit;
+            filter: blur(4px);
+            z-index: -1;
+            opacity: 0.7;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="lightbox" class="lightbox">
+  <span class="lb-counter" id="lb-counter" onclick="handleMobileCounterClick(event)">1 / 1</span>
+  <button class="lb-close-btn" onclick="closeGallery(event, true)" title="关闭 (Esc)">✕</button>
+  <button class="lb-rotate-btn" onclick="toggleRotate(event)" title="旋转 90°">🔄</button>
+  <div class="lb-btn lb-prev" onclick="changeImg(-1, event)">&#10094;</div>
+  <div class="lb-track" id="lb-track">
+    <div class="lb-slide"><img id="lb-img-prev" class="lb-img"></div>
+    <div class="lb-slide"><img id="lb-img-curr" class="lb-img"></div>
+    <div class="lb-slide"><img id="lb-img-next" class="lb-img"></div>
+  </div>
+  <div class="lb-btn lb-next" onclick="changeImg(1, event)">&#10095;</div>
+</div>
+
+<!-- 修改点3：查看原HTML弹窗策略：默认大尺寸、点击空白位置关闭、变更为4个按钮、支持切换渲染/代码模式 -->
+<div id="msg-modal" onclick="if(event.target === this) { document.getElementById('msg-modal').style.display='none'; }" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:10000; justify-content:center; align-items:center;">
+  <div id="msg-modal-box" style="background:white; padding:15px; border-radius:8px; width:85vw; height:85vh; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.2); box-sizing:border-box;">
+    <div style="margin-bottom:10px; font-weight:600; font-size:14px; color:#4a5568; display:flex; justify-content:space-between; align-items:center;">
+      <span id="msg-modal-title">消息内容 (HTML源码模式)</span>
+    </div>
+    <!-- 渲染视图容器与源码文本域切换展示 -->
+    <div id="msg-modal-content-container" style="flex:1; display:flex; flex-direction:column; min-height:0; position:relative;">
+      <textarea id="msg-modal-text" style="width:100%; height:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-size:13px; resize:none; box-sizing:border-box; outline:none; font-family:monospace;"></textarea>
+      <div id="msg-modal-render-view" style="display:none; width:100%; height:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-size:14px; overflow-y:auto; box-sizing:border-box; background:#fff; white-space:pre-wrap; word-break:break-all;"></div>
+    </div>
+    <div style="margin-top:12px; text-align:right; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+      <button id="modal-btn-toggle-render" onclick="toggleModalRenderMode()" style="background:#4299e1; padding:6px 16px;">切换渲染显示</button>
+      <button onclick="copyModalHtmlAndClose()" style="background:#48bb78; padding:6px 16px;">复制HTML并关闭</button>
+      <button onclick="copyModalTextAndClose()" style="background:#3182ce; padding:6px 16px;">复制文本并关闭</button>
+      <button onclick="document.getElementById('msg-modal').style.display='none'" style="background:#718096; padding:6px 16px;">仅关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- 聊天室 HTML 结构 -->
+<div id="chat-window" style="display:none; position:fixed; left:calc(50vw - 260px); top:20px; width:520px; height:600px; background:white; border:1px solid #ccc; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.2); z-index:9998; flex-direction:column;">
+  <!-- 标题栏 -->
+  <div id="chat-header" style="padding:8px 12px; background:#4299e1; color:white; border-radius:10px 10px 0 0; cursor:move; display:flex; justify-content:space-between; user-select:none; align-items:center;">
+      <div id="new-msg-bubble" style="display:none; position:absolute; bottom:165px; right:30px; background:#e53e3e; color:white; padding:8px 16px; border-radius:20px; font-size:12px; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3); z-index:1000;" onclick="scrollToChatBottom()">
+          <span id="new-msg-count">0</span> 条新消息 ↓
+      </div>
+      <span>局域网聊天室 <span id="my-id-display" style="font-size:11px; opacity:0.8;">获取中...</span></span>
+      <div style="display:flex; gap:10px; font-size:14px;">
+          <span onclick="minChat()" style="cursor:pointer;" title="最小化">➖</span>
+          <span id="chat-max-btn" onclick="maxChat()" style="cursor:pointer;" title="最大化/还原">🔲</span>
+          <span onclick="closeChat()" style="cursor:pointer;" title="关闭(停止接收)">❌</span>
+      </div>
+  </div>
+  
+  <!-- 消息展示区 -->
+  <div style="position:relative; flex:1; display:flex; flex-direction:column; min-height:0;">
+      <!-- 将原本输入框的发文件拖拽区隔离并转移到整个 chat-body 内 -->
+      <div id="chat-body" style="flex:1; overflow-y:auto; padding:15px; display:flex; flex-direction:column; gap:10px; background:#fafafa; transition: background 0.2s;"></div>
+      <!-- 复制末条按钮（仅在底部且非自己发送时显示） -->
+      <button id="btn-copy-last" style="display:none; position:absolute; bottom:15px; right:20px; background:rgba(237,242,247,0.9); color:#4a5568; font-size:11px; padding:4px 10px; border:1px solid #cbd5e0; border-radius:4px; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.1); z-index:10; font-weight:bold; transition:all 0.2s;" onclick="copyLastMsg()">📋 复制末条</button>
+  </div>
+  
+  <!-- 底部输入与操作区 -->
+  <div id="chat-footer" style="padding:10px; border-top:1px solid #edf2f7; display:flex; gap:10px; background:white; border-radius:0 0 10px 10px; height:150px; box-sizing:border-box;">
+      <!-- 输入框（支持拖拽图片文件，文字全屏延伸，按钮悬浮）修改点：添加 id="chat-input-wrapper"，并将 overflow:hidden 改为 visible -->
+      <div id="chat-input-wrapper" style="position:relative; flex:1; border:1px solid #cbd5e0; border-radius:4px; background:white; display:flex; flex-direction:column; overflow:visible;">
+          <!-- 更改右侧区域直接重叠按钮 padding为8px  -->
+          <div id="chat-input" contenteditable="true" data-placeholder="输入消息(Ctrl+Enter发送，拖放图片到此插入)..." 
+               style="flex:1; overflow-y:auto; padding:8px; border:none; outline:none; font-size:13px; font-family:inherit; box-sizing:border-box; white-space:pre-wrap; word-break:break-word;"></div>
+
+          <!-- 悬浮按钮组：上下排布，正方形变圆圈且半透明opacity，加入 mousedown 拦截防失焦 -->
+          <div style="position:absolute; right:12px; bottom:10px; display:flex; flex-direction:column; gap:10px; z-index:5;">
+             <button onclick="openChatFilePicker()" onmousedown="event.preventDefault()" style="opacity: 0.2;width:34px; height:34px; padding:0; border:none; background:rgba(203,213,224,0.4); cursor:pointer; font-size:18px; color:#4a5568; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,0.2);" title="发送文件">📤</button>
+             <button id="btn-emoji" onclick="toggleEmojiWindow(event)" onmousedown="event.preventDefault()" style="opacity: 0.3;width:34px; height:34px; padding:0; border:none; background:rgba(203,213,224,0.4); cursor:pointer; font-size:18px; color:#4a5568; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,0.1);" title="插入表情/常用语">☺️</button>
+          </div>
+      </div>
+
+      <!-- 右侧发送控制区 -->
+      <div style="width:90px; display:flex; flex-direction:column; gap:6px; justify-content:space-between;">
+        <div style="position:relative;">
+           <!-- 修改对象输入框，点击时自动弹窗“在线人员” -->
+           <input type="text" id="chat-target" placeholder="对象ID" onclick="showMembersWindow(event)" style="width:100%; padding:6px 22px 6px 6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px; box-sizing:border-box;" title="点击弹出在线人员 (支持多选)">
+           <div id="btn-show-members" style="position:absolute; right:4px; top:5px; background:#4299e1; color:white; font-size:10px; border-radius:10px; padding:1px 5px; cursor:pointer; user-select:none;" onclick="showMembersWindow(event)" title="查看在线人员">0</div>
+        </div>
+        <div id="recent-targets" style="display:flex; flex-wrap:wrap; gap:3px; font-size:10px; min-height:16px; align-content:flex-start;"></div>
+        <button onmousedown="event.preventDefault()" onclick="sendChat()" style="width:100%; height:32px; padding:0; font-size:13px; font-weight:bold; background:#38a169; color:white; border:none; border-radius:4px; cursor:pointer;">发送</button>
+      </div>
+  </div>
+</div>
+
+<div class="container">
+    <div class="header-flex">
+        <h2 style="margin:0; display:flex; align-items:center;">
+            <div style="position:relative; display:inline-block; margin-right:12px; cursor:pointer; width:32px; height:32px;" onclick="toggleChat()" title="开启/最小化聊天室">
+              <img src="https://files.getquicker.net/_userFiles/59771/avata_20221106024131.jpg" style="width:100%; height:100%; border-radius:50%; display:block; object-fit:cover;">
+              <span id="chat-badge" style="display:none; position:absolute; top:-4px; right:-8px; background:#e53e3e; color:white; border-radius:10px; font-size:11px; padding:1px 5px; font-weight:bold; box-shadow:0 1px 2px rgba(0,0,0,0.2);">0</span>
+            </div>
+            局域网共享门户
+        </h2>
+        
+        <!-- 新增：上传任务控件及包裹容器 -->
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div id="upload-task-btn" style="display: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #333; background: #edf2f7; padding: 6px 12px; border-radius: 20px; transition: all 0.2s; user-select: none;" onclick="toggleUploadWindow(event)">
+                上传任务
+            </div>
+            <div class="timer-box" id="timer-box" onclick="manualReload(event)" style="cursor: pointer;" title="点击手动重载共享文件和聊天记录">⏳ 服务闲置关闭倒数: <span id="countdown">05:00</span></div>
+        </div>
+
+<!-- === 新增：上传列表窗口 === -->
+    <div id="upload-list-window" style="display: none; position: fixed; right: 20px; top: 75px; width: 380px; background: white; border: 1px solid #cbd5e0; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border-radius: 8px; z-index: 10001; overflow: hidden; flex-direction: column; max-height: 450px;">
+        <!-- a. 进度条容器 -->
+        <div style="position: relative; height: 35px; background: #f8fafc; border-bottom: 1px solid #edf2f7;">
+            <!-- 文字在下层 (z-index: 1) -->
+            <div id="upload-progress-text" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #2d3748; z-index: 1; pointer-events: none; white-space: nowrap;">
+                0% 0/0 0MB/s 0B / 0B
+            </div>
+            <!-- 果冻橙色半透明进度条在上层盖住文字 (z-index: 2 见 CSS) -->
+            <div id="upload-progress-fill-neon" class="neon-progress"></div>
+        </div>
+        <!-- b. 待上传及历史列表 -->
+        <div id="upload-list-content" style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 100px;">
+            <div style="text-align:center; color:#a0aec0; font-size:12px; padding-top:20px;">暂无上传任务</div>
+        </div>
+    </div>
+
+    </div>
+
+    <input type="file" id="fileUploader" multiple style="position:absolute; top:-9999px; left:-9999px; opacity:0; width:1px; height:1px;" onchange="doUpload(this.files)" />
+    
+    <div class="actions">
+        <button onclick="selectAll()">全选</button>
+        <button onclick="deselectAll()">全不选</button>
+        <button onclick="invertSelection()">反选</button>
+        <button class="btn-upload" onclick="triggerUpload('default', '默认目录', this)">📤 上传文件</button>
+        <button class="btn-download" onclick="batchDownload()">📦 批量下载</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 40px;">✓</th>
+                <th style="width: 80px;">预览</th>
+                <th class="sortable" onclick="sortByNamePath()">文件名及路径 <span id="sort-np-icon" class="sort-icon">(路径⬇)</span></th>
+                <th class="sortable" style="width: 160px;" onclick="sortByDate()">修改日期 <span id="sort-date-icon" class="sort-icon"></span></th>
+                <th class="sortable" style="width: 90px;" onclick="sortBySize()">大小 <span id="sort-size-icon" class="sort-icon"></span></th>
+                <th style="width: 100px;text-align: center;">操作</th>
+            </tr>
+        </thead>
+        <tbody id="file-list-body">
+            <!-- 由 JavaScript 动态渲染 -->
+        </tbody>
+    </table>
+<!-- 新增：聊天记录区专属的拖拽提示 Tooltip（由 JS 动态计算居中） v i33g-->
+<div id="chat-body-drop-tooltip">📂 松开鼠标发送文件</div>
+</div>
+
+<script>
+
+// === 拖拽事件防抖定时器 ===
+    let chatInputDragTimer;
+    let chatBodyDragTimer;
+    let isInternalDrag = false; // 新增：标识是否为输入框内部的文本拖拽
+
+    // 获取聊天区提示节点
+    const chatBodyTooltip = document.getElementById('chat-body-drop-tooltip');
+// --- 新增：识别内部文本拖拽 ---
+    const chatInput = document.getElementById('chat-input');
+    chatInput.addEventListener('dragstart', (e) => {
+        isInternalDrag = true; // 只要是在输入框内部开始的拖拽，标记为 true
+    });
+    chatInput.addEventListener('dragend', (e) => {
+        isInternalDrag = false; // 拖拽结束（无论成功与否），重置标记
+    });
+
+let emojisCache = null;
+let recentSpeakers = []; // 全局记录近期发言的 3 个IP
+
+// === 新增：全局记录当前粘贴模式 ===
+window.isAdvancedPaste = true;
+const MAX_CHAT_INPUT_LENGTH = 15000; // 安全输入上限字数
+
+// === 新增：全局记录 Shift 键状态 ===
+window.isShiftDown = false;
+document.addEventListener('keydown', e => { if (e.key === 'Shift') window.isShiftDown = true; });
+document.addEventListener('keyup', e => { if (e.key === 'Shift') window.isShiftDown = false; });
+
+// 自动动态获取当前访问的路由前缀
+const pathSegments = window.location.pathname.split('/').filter(Boolean);
+const routePrefix = pathSegments.length > 0 ? pathSegments[0] : 'qkLANfile';
+
+// 拼接成完整的动态服务根路径
+const SERVER_URL = `${window.location.protocol}//${window.location.host}/${routePrefix}/`;
+let currentUploadToken = ''; 
+let currentTargetFolder = ''; 
+let currentUploadRow = null; 
+let myIpId = '未知';
+let activePings = {}; 
+let timerId = null;
+
+function triggerSingleDownload(url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+let recentUploads = [];
+window.onload = () => {
+    // 解析 URL 上的 user 或 name 参数传递给 whoami 接口注册身份
+    const urlParams = new URLSearchParams(window.location.search);
+    const userName = urlParams.get('user') || urlParams.get('name') || '';
+    const queryStr = userName ? `?name=${encodeURIComponent(userName)}` : '';
+
+    fetch(SERVER_URL + 'whoami' + queryStr)
+        .then(r => r.text())
+        .then(text => {
+            let id = text;
+            let displayName = text;
+            try {
+                const data = JSON.parse(text); // 尝试解析增强版的 JSON 格式
+                id = data.id;
+                displayName = data.name;
+            } catch(e) {}
+            
+            myIpId = id; // 保持底层判断的 myIpId 仍为纯数字
+            document.querySelectorAll('#my-id-display').forEach(el => {
+                el.innerText = '当前ID: ' + displayName;
+            });
+        }).catch(()=>{});
+
+    fetchFiles();
+    initRichChatEvents(); // 初始化富文本编辑与剪贴板监听
+};
+
+let filesData = [];
+async function fetchFiles() {
+    try {
+        const r = await fetch(SERVER_URL + 'api/files', { cache: 'no-cache' });
+        filesData = await r.json();
+        renderTable();
+    } catch(e) { showToast('获取列表失败'); }
+}
+
+// === 新增：倒计时/整体点击触发的“手动重载”函数 ===
+async function manualReload(e) {
+    if (e) e.stopPropagation();
+    const tb = document.getElementById('timer-box');
+    tb.innerHTML = '⏳ 正在尝试重载...';
+    tb.style.pointerEvents = 'none';
+    
+    try {
+        // 1. 重新加载共享文件列表
+        await fetchFiles();
+        
+        // 2. 获取并追加最新的聊天记录
+        const r = await fetch(`${SERVER_URL}chat/get?last=${lastMsgTime}&c=1`, { cache: 'no-cache' });
+        if (r.status === 200) {
+            let data = await r.json();
+            if (data && data.length > 0) {
+                renderChat(data, true);
+            }
+        }
+        
+        // 3. 顺便校验服务器存活状态并校准倒计时
+        const pingRes = await fetch(SERVER_URL + 'keepaliveping', { method: 'GET', cache: 'no-cache' });
+        if (pingRes.ok) {
+            let tText = await pingRes.text();
+            let rem = parseInt(tText);
+            if (!isNaN(rem) && rem > 0) timeLeft = rem;
+        }
+        
+        showToast('✅ 手动重载成功，已更新文件与聊天记录！');
+    } catch (err) {
+        showToast('❌ 重载失败，服务器可能处于休眠或断开状态');
+    } finally {
+        // 恢复倒计时UI展示
+        tb.style.pointerEvents = 'auto';
+        tb.innerHTML = '⏳ 服务闲置关闭倒数: <span id="countdown"></span>';
+        const countEl = document.getElementById('countdown');
+        if (countEl) {
+            countEl.innerText = `${String(Math.floor(timeLeft / 60)).padStart(2, '0')}:${String(timeLeft % 60).padStart(2, '0')}`;
+        }
+    }
+}
+
+// === 新增：加载与处理表情窗口逻辑 ===
+async function fetchEmojis() {
+    if (emojisCache) return emojisCache;
+    try {
+        let r = await fetch('http://127.0.0.1:8088/qkLANfile/api/emojis'); // 优先请求本地服务器桌面端
+        if (r.ok) emojisCache = await r.json();
+    } catch(e) {}
+    if ((!emojisCache || emojisCache.length === 0) && window.location.hostname !== '127.0.0.1') {
+        try {
+            let r2 = await fetch(SERVER_URL + 'api/emojis'); // 回退至当前局域网宿主机
+            if (r2.ok) emojisCache = await r2.json();
+        } catch(e) {}
+    }
+    return emojisCache || [];
+}
+async function toggleEmojiWindow(e) {
+    e.stopPropagation();
+    let win = document.getElementById('emoji-window');
+    if (!win) {
+        win = document.createElement('div');
+        win.id = 'emoji-window';
+        // 使用 visibility:hidden 进行初始计算
+        win.style.cssText = 'display:none; visibility:hidden; position:fixed; background:white; border:1px solid #cbd5e0; box-shadow:0 8px 24px rgba(0,0,0,0.15); border-radius:8px; padding:10px; z-index:10001; width:220px; max-height:200px; overflow-y:auto;';
+        // 关键修复点：拦截面板及其内部元素的 mousedown 点击事件默认焦点移转，保留输入框光标
+        win.onmousedown = (ev) => ev.preventDefault(); 
+        document.body.appendChild(win);
+        
+    }
+    
+    if (win.style.display === 'block' && win.style.visibility === 'visible') { 
+        win.style.display = 'none'; 
+        win.style.visibility = 'hidden'; 
+        return; 
+    }
+
+    win.innerHTML = '<div style="text-align:center; color:#a0aec0; font-size:12px;">加载中...</div>';
+    win.style.display = 'block';
+
+    let btn = document.getElementById('btn-emoji');
+    let rect = btn.getBoundingClientRect();
+    
+    let emojis = await fetchEmojis();
+    if (emojis.length === 0) { 
+        win.innerHTML = '<div style="text-align:center; color:#a0aec0; font-size:12px;">未配置表情</div>'; 
+    } else {
+        let html = `<div style="display:flex; flex-wrap:wrap; gap:6px;">`;
+        emojis.forEach((em, idx) => {
+            if (em.type === 'image') {
+                html += `<div title="插入图片" onclick="insertEmoji(${idx})" style="width:32px; height:32px; cursor:pointer; border:1px solid #edf2f7; border-radius:4px; overflow:hidden;"><img src="${em.url}" style="width:100%; height:100%; object-fit:cover;"></div>`;
+            } else {
+                let safeText = em.text.replace(/"/g, '&quot;');
+                html += `<div title="${safeText}" onclick="insertEmoji(${idx})" style="padding:4px 8px; cursor:pointer; background:#edf2f7; border-radius:4px; font-size:12px; color:#4a5568;">${em.shortStr}</div>`;
+            }
+        });
+        html += `</div>`;
+        win.innerHTML = html;
+        win.dataset.emojis = JSON.stringify(emojis);
+    }
+    
+    // 渲染后获取实际宽高定位并展现
+    let winHeight = win.offsetHeight;
+    let winWidth = win.offsetWidth;
+    
+    // 默认和按钮右对齐
+    win.style.left = (rect.right - winWidth) + 'px';
+    // 高度探测：若底部没有充足空间（+10余量）时，在按钮上方显示
+    if (rect.bottom + winHeight + 10 > window.innerHeight) {
+        win.style.top = (rect.top - winHeight - 5) + 'px';
+    } else {
+        win.style.top = (rect.bottom + 5) + 'px';
+    }
+    win.style.visibility = 'visible';
+}
+
+let lastMsgSender = ''; 
+let lastMsgHasText = false; // 全局记录末条消息是否包含文本
+let lastChatSelection = null; 
+
+function saveChatSelection() {
+    let sel = window.getSelection();
+    if (sel.rangeCount > 0) {
+        let range = sel.getRangeAt(0);
+        let input = document.getElementById('chat-input');
+        if (input.contains(range.commonAncestorContainer)) {
+            lastChatSelection = range.cloneRange();
+        }
+    }
+}
+
+const chatInputEl = document.getElementById('chat-input');
+['keyup', 'mouseup', 'focus', 'blur'].forEach(evt => {
+    chatInputEl.addEventListener(evt, saveChatSelection);
+});
+
+// 在外部声明一个辅助恢复光标的函数
+function restoreChatCursor() {
+    let input = document.getElementById('chat-input');
+    input.focus();
+    if (lastChatSelection) {
+        let sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(lastChatSelection);
+    }
+}
+
+function insertAtCursor(nodeOrText) {
+    let input = document.getElementById('chat-input');
+    input.focus();
+    let sel = window.getSelection();
+    let range = lastChatSelection;
+
+    if (!range || !input.contains(range.commonAncestorContainer)) {
+        range = document.createRange();
+        range.selectNodeContents(input);
+        range.collapse(false);
+    }
+
+    range.deleteContents(); 
+
+    let el = (typeof nodeOrText === 'string') ? document.createTextNode(nodeOrText) : nodeOrText;
+    range.insertNode(el);
+
+    range = range.cloneRange();
+    range.setStartAfter(el);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    saveChatSelection();
+}
+
+function insertEmoji(idx) {
+    let win = document.getElementById('emoji-window');
+    if (!win || !win.dataset.emojis) return;
+    let em = JSON.parse(win.dataset.emojis)[idx];
+    
+    if (em.type === 'image') {
+        let img = document.createElement('img');
+        img.src = em.url;
+        img.style.maxWidth = '120px';
+        img.style.maxHeight = '120px';
+        img.style.verticalAlign = 'bottom';
+        insertAtCursor(img);
+    } else { 
+        insertAtCursor(em.text); 
+    }
+    win.style.display = 'none';
+    win.style.visibility = 'hidden';
+}
+
+function showMembersWindow(e) {
+    e.stopPropagation();
+    let win = document.getElementById('members-window');
+    if (!win) {
+        win = document.createElement('div');
+        win.id = 'members-window';
+        win.style.cssText = 'display:none; position:fixed; background:white; border:1px solid #cbd5e0; box-shadow:0 8px 24px rgba(0,0,0,0.15); border-radius:8px; padding:10px; z-index:10001; width:200px; max-height:220px; overflow-y:auto;';
+        document.body.appendChild(win);
+        
+        document.addEventListener('click', (ev) => { 
+            if (win.style.display !== 'none' && !win.contains(ev.target) && !document.getElementById('btn-show-members').contains(ev.target)) {
+                win.style.display = 'none'; 
+            }
+        });
+    }
+
+    if (win.style.display === 'block') { win.style.display = 'none'; return; }
+
+    let chatUsers = [];
+    let pcUsers = [];
+    
+    // 1. 遍历在线人员，依据是否带有 ":" 冒号来区分 PC端文件对象 和 聊天对象
+    chatMembers.forEach(id => {
+        if (id.includes(':')) {
+            pcUsers.push(id);
+        } else {
+            chatUsers.push(id);
+        }
+    });
+
+    let html = '';
+
+    // 2. 渲染上半部分：发送文件对象 (特殊橙色底色)
+    if (pcUsers.length > 0) {
+        html += `<div style="font-size:11px; font-weight:bold; color:#718096; margin-bottom:6px;">📤 发送文件对象 (PC端)</div><div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">`;
+        pcUsers.forEach(id => {
+            html += `<div onclick="triggerPcUpload('${id}', event)" style="background:#fbd38d; padding:3px 8px; border-radius:12px; border:1px solid #ed8936; color:#9c4221; font-size:12px; cursor:pointer; user-select:none; font-weight:bold;" title="点击直接发送文件到该设备">${id}</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // 3. 渲染下半部分：聊天对象
+    if (chatUsers.length > 0) {
+        html += `<div style="font-size:11px; font-weight:bold; color:#718096; margin-bottom:6px;">💬 聊天对象 (点击追加多选)</div><div style="display:flex; flex-wrap:wrap; gap:5px;">`;
+        chatUsers.forEach(id => {
+            html += `<div onclick="appendTarget('${id}', event)" style="background:#edf2f7; padding:3px 8px; border-radius:12px; border:1px solid #cbd5e0; font-size:12px; cursor:pointer; user-select:none;">${id}</div>`;
+        });
+        html += `</div>`;
+    } else if (pcUsers.length === 0) {
+        html += `<div style="font-size:11px; font-weight:bold; color:#718096;">暂无在线人员</div>`;
+    }
+
+    win.innerHTML = html;
+    win.style.display = 'block';
+    
+    let targetEl = document.getElementById('chat-target');
+    let targetRect = targetEl.getBoundingClientRect();
+    let winHeight = win.offsetHeight;
+
+    win.style.left = (targetRect.right + 6) + 'px';
+    win.style.top = (targetRect.bottom - winHeight) + 'px';
+}
+
+// 新增辅助函数：处理点击带有端口的 PC 用户并直接发起上传请求
+function triggerPcUpload(id, e) {
+    e.stopPropagation();
+    let parts = id.split(':');
+    let suffix = parts[0];  // 获取 IP 尾号，如 "5"
+    let port = parts[1];    // 获取端口，如 "8077"
+    
+    let ip = suffix;
+    // 根据当前访问的网页 host (例如 192.168.0.x) 自动补全前面的网段拼接出完整 IP
+    const hostParts = window.location.hostname.split('.');
+    if (hostParts.length === 4) {
+        hostParts[3] = suffix;
+        ip = hostParts.join('.');
+    }
+    
+    // 调用现有的 sendChatFile 函数发起上传请求
+    sendChatFile(ip, port, e);
+    
+    // 操作完成后自动隐藏在线人员列表弹窗
+    let win = document.getElementById('members-window');
+    if (win) win.style.display = 'none';
+}
+
+// 多选追加 ID 逻辑
+function appendTarget(id, e) {
+    if(e) e.stopPropagation();
+    let input = document.getElementById('chat-target');
+    let list = input.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!list.includes(id)) {
+        list.push(id);
+        input.value = list.join(',');
+    }
+}
+
+
+function renderTable() {
+    const tbody = document.getElementById('file-list-body');
+    tbody.innerHTML = '';
+    
+    const dirs = filesData.filter(f => f.isDir);
+    const files = filesData.filter(f => !f.isDir);
+    
+    dirs.forEach(dir => {
+        tbody.appendChild(createRow(dir, true));
+        const children = files.filter(f => f.path.startsWith(dir.path));
+        children.sort((a,b) => b.date - a.date).forEach(c => {
+            tbody.appendChild(createRow(c, false, true));
+            files.splice(files.indexOf(c), 1);
+        });
+    });
+    
+    files.sort((a,b) => b.date - a.date).forEach(f => tbody.appendChild(createRow(f, false)));
+
+    recentUploads.forEach(upload => {
+        const allRows = Array.from(tbody.querySelectorAll('tr.file-item'));
+        const newFileRow = allRows.find(r => r.dataset.name === upload.uploadedName);
+        
+        if (newFileRow) {
+            newFileRow.classList.add('new-upload');
+            if (upload.targetName === 'default') {
+                tbody.insertBefore(newFileRow, tbody.firstChild);
+            } else {
+                const targetRow = allRows.find(r => r.dataset.name.replace(/'/g, '‘') === upload.targetName);
+                if (targetRow) {
+                    targetRow.parentNode.insertBefore(newFileRow, targetRow.nextSibling);
+                }
+            }
+        }
+    });
+}
+
+function createRow(file, isDir, isChild = false) {
+    const tr = document.createElement('tr');
+    tr.className = 'file-item file-row ' + (isChild ? 'folder-group' : '');
+    tr.dataset.date = file.date || 0;
+    tr.dataset.size = file.size || 0;
+    tr.dataset.name = file.name || '';
+    tr.dataset.path = file.path || '';
+
+    const safeName = file.name;
+    const safeNameAttr = safeName.replace(/'/g, '‘'); 
+    const sizeStr = isDir ? "-" : formatBytes(file.size);
+    const downloadUrl = file.url ? `${file.url}?download=true` : '';
+    const dlBtn = isDir ? "" : `<button class="btn-download btn-icon" onclick="triggerSingleDownload('${downloadUrl}')" title="下载文件">⬇</button>`;
+    
+    const uploadToken = file.uploadToken || file.token;
+    let upBtn = "";
+    if (file.canUpload !== false) {
+        upBtn = `<button class="btn-upload btn-icon" onclick="triggerUpload('${uploadToken}', '${safeNameAttr}')" title="上传文件到此目录">📤</button>`;
+    } else {
+        upBtn = `<button class="btn-upload btn-icon" disabled style="background-color: #cbd5e0; cursor: not-allowed; opacity: 0.6;" title="当前IP不在信任列表，且该文件/目录不在限定上传范围内">📤</button>`;
+    }
+
+    const actionsHtml = `<div style="display: flex; gap: 6px; align-items: center; justify-content: flex-start;">${upBtn}${dlBtn}</div>`;
+
+    let previewHtml = '';
+    if (isDir) {
+        previewHtml = `<a href="javascript:void(0)" class="file-icon-link" style="display:inline-flex; align-items:center; gap:4px; text-decoration:none;" title="文件夹"><span style="font-size:22px;">📁</span><span style="font-size:11px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:2px 4px; border-radius:4px;">DIR</span></a>`;
+    } else {
+        const ext = safeName.includes('.') ? safeName.split('.').pop().toLowerCase() : '';
+        let fileIcon = '📄';
+        if (['zip', 'rar', '7z', 'tar', 'gz', 'iso'].includes(ext)) fileIcon = '📦';
+        else if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) fileIcon = '🎬';
+        else if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) fileIcon = '🎵';
+        else if (['doc', 'docx'].includes(ext)) fileIcon = '📝';
+        else if (['xls', 'xlsx', 'csv'].includes(ext)) fileIcon = '📊';
+        else if (['ppt', 'pptx'].includes(ext)) fileIcon = '📊';
+        else if (['code', 'js', 'css', 'cs', 'py', 'xml', 'log', 'md'].includes(ext)) fileIcon = '💻';
+
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+            // 【修改点4】：传入 false 代表这是文件列表的图
+            previewHtml = `<a href="javascript:void(0)" class="gallery-link" onclick="openGallery('${file.url}', false)"><img src="${file.url}" class="preview"></a>`;
+        } else {
+            const inlineUrl = `${file.url}?inline=true`;
+            const extText = ext ? ext.toUpperCase() : 'FILE';
+            previewHtml = `<a href="${inlineUrl}" target="_blank" class="file-icon-link" title="点击在网页预览 (${safeName})" style="display:inline-flex; align-items:center; gap:1px; text-decoration:none;"><span style="font-size:25px;">${fileIcon}</span><span style="font-size:8px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:0px 1px; border-radius:1px;">${extText}</span></a>`;
+        }
+    }
+
+    tr.innerHTML = `
+        <td><input type="checkbox" class="cb-file" ${isDir ? 'disabled' : ''} value="${downloadUrl}" /></td>
+        <td>${previewHtml}</td>
+        <td>
+            <div class="file-name-title" title="${safeName}" onclick="handleMobileClick(event, '${safeNameAttr}')">${safeName}</div>
+            <div class="path-info" title="${file.path}" onclick="handleMobileClick(event, '${file.path.replace(/\\/g, '\\\\').replace(/'/g, '‘')}')">${file.path}</div>
+        </td>
+        <td>${file.date ? new Date(file.date).toLocaleString() : '-'}</td>
+        <td>${sizeStr}</td>
+        <td>${actionsHtml}</td>
+    `;
+    return tr;
+}
+
+function formatBytes(bytes) {
+    if(bytes === 0) return '0B'; 
+    const k = 1024; const sizes = ['B', 'KB', 'MB', 'GB']; 
+    const i = Math.floor(Math.log(bytes) / Math.log(k)); 
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i]; 
+}
+
+function showToast(text, duration = 4000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = 'toast-msg'; toast.innerText = text;
+  toast.onclick = () => closeToast(toast);
+  container.appendChild(toast);
+  setTimeout(() => closeToast(toast), duration);
+}
+
+function showInlineTip(e, text) {
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+    e.stopPropagation();
+    const existing = document.getElementById('inline-tip-popup');
+    if (existing) existing.remove();
+    
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const tip = document.createElement('div');
+    tip.id = 'inline-tip-popup';
+    tip.innerText = text;
+    tip.style.cssText = `position: fixed; z-index: 10006; background: rgba(30, 30, 30, 0.95); color: white; padding: 8px 14px; border-radius: 8px; font-size: 13px; word-break: break-all; max-width: min(600px, 90vw); box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: toastFadeIn 0.2s forwards;`;
+    document.body.appendChild(tip);
+    let top = rect.bottom + 6;
+    let left = rect.left + (rect.width / 2) - (tip.offsetWidth / 2);
+    if (left < 10) left = 10;
+    if (left + tip.offsetWidth > window.innerWidth - 10) left = window.innerWidth - tip.offsetWidth - 10;
+    if (top + tip.offsetHeight > window.innerHeight - 10) top = rect.top - tip.offsetHeight - 6;
+    tip.style.top = top + 'px';
+    tip.style.left = left + 'px';
+    const removeTip = () => {
+        if (tip.parentNode) {
+            tip.style.animation = 'toastFadeOut 0.2s forwards';
+            setTimeout(() => tip.remove(), 200);
+        }
+        document.removeEventListener('click', removeTip);
+    };
+    setTimeout(removeTip, 3000);
+    setTimeout(() => document.addEventListener('click', removeTip), 10);
+}
+
+function handleMobileClick(e, text) { showInlineTip(e, text); }
+function handleMobileCounterClick(e) {
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+    e.stopPropagation();
+    const counterEl = document.getElementById('lb-counter');
+    if (counterEl && counterEl.title) showInlineTip(e, counterEl.title);
+}
+
+function closeToast(toast) {
+  if (toast.dataset.closing) return;
+  toast.dataset.closing = 'true';
+  toast.style.animation = 'toastFadeOut 0.3s forwards';
+  setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+}
+
+// === 1. 提取全局计时器逻辑 ===
+let timeLeft = 300;
+
+// 新增该函数包裹原有的定时器逻辑
+function startGlobalTimer() {
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(() => {
+        if (timeLeft <= 0) return;
+        timeLeft--;
+        const countEl = document.getElementById('countdown');
+        if (countEl) countEl.innerText = `${String(Math.floor(timeLeft / 60)).padStart(2, '0')}:${String(timeLeft % 60).padStart(2, '0')}`;
+
+        if(timeLeft <= 0) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            fetch(SERVER_URL + 'ping', { method: 'GET', cache: 'no-cache', signal: controller.signal })
+            .then(r => {
+                clearTimeout(timeoutId);
+                if(!r.ok) throw new Error('Not OK');
+                return r.json();
+            })
+            .then(data => {
+                const remain = (typeof data === 'object' && data !== null) ? (data.remain !== undefined ? data.remain : 0) : Number(data);
+                if (remain <= 0) {
+                    fetch(SERVER_URL + 'shutdown', { method: 'GET', cache: 'no-cache' }).catch(()=>{});
+                    disableAllActions();
+                } else {
+                    timeLeft = remain;
+                    if (typeof data === 'object' && data.actionPings) { activePings = data.actionPings; renderMembers(); }
+                }
+            })
+            .catch(() => {
+                fetch(SERVER_URL + 'shutdown', { method: 'GET', cache: 'no-cache' }).catch(()=>{});
+                disableAllActions();
+            });
+        }
+    }, 1000);
+}
+
+// 页面加载完成后立即启动一次
+startGlobalTimer();
+
+/* --- 富文本与 Clipboard API & 拖拽上传逻辑 --- */
+function initRichChatEvents() {
+    const chatInput = document.getElementById('chat-input');
+    if (!chatInput) return;
+
+    // 1. 快捷键及安全输入上限字数拦截 (打字层面)
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            sendChat();
+            return;
+        }
+        // 对正常打字进行字数熔断，排除控制键（删除、退格、方向键等）
+        
+            const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Control', 'Alt', 'Shift', 'Meta'];
+            if (!allowedKeys.includes(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                if (chatInput.innerText.length >= MAX_CHAT_INPUT_LENGTH) {
+                    e.preventDefault();
+                    showToast(`⚠️ 输入字数已达安全上限 (${MAX_CHAT_INPUT_LENGTH})，无法继续输入。`);
+                }
+            }
+        
+    });
+
+    // --- 1. 聊天输入框 拖拽相关事件 (增加光标定位及文本拖放支持) 解决滚动时的微小闪烁---
+    chatInput.addEventListener('dragover', (e) => {
+// 【核心修复】：如果是内部拖拽，千万不要 preventDefault，彻底放权给浏览器
+        if (isInternalDrag) {
+            // 浏览器会原生处理光标 (copy/move) 和拖拽交互
+            return; 
+        }
+        e.preventDefault(); // 必须保留，否则无法触发 drop
+
+        e.dataTransfer.dropEffect = 'copy';
+        
+        clearTimeout(chatInputDragTimer); 
+        
+        if (!chatInput.classList.contains('drag-over')) {
+            chatInput.classList.add('drag-over');
+            document.getElementById('chat-input-wrapper').classList.add('drag-over');
+        }
+    });
+
+    chatInput.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        
+        // 新增：内部拖拽不涉及遮罩UI，直接跳过
+        if (isInternalDrag) return; 
+
+        chatInputDragTimer = setTimeout(() => {
+            chatInput.classList.remove('drag-over');
+            document.getElementById('chat-input-wrapper').classList.remove('drag-over');
+        }, 50); 
+    });
+
+    chatInput.addEventListener('drop', (e) => {
+        // 清理可能遗留的 UI 状态和定时器
+        clearTimeout(chatInputDragTimer);
+        chatInput.classList.remove('drag-over');
+        document.getElementById('chat-input-wrapper').classList.remove('drag-over');
+
+        // 核心修改：如果是内部拖拽
+        if (isInternalDrag) {
+            isInternalDrag = false; // 重置状态
+            return; // 关键：不调用 e.preventDefault()，彻底放权给浏览器
+            // 浏览器的原生行为会自动将高亮的文字从原位置删除，并移动到鼠标松开的位置
+        }
+
+        // 只有外部拖入的文件或文本，才拦截默认行为走自定义解析
+        e.preventDefault();
+        
+        
+        // 【新增】根据鼠标松开的位置，动态修改插入光标坐标
+        let dropRange = null;
+        if (document.caretRangeFromPoint) { // Chrome, Safari, Edge
+            dropRange = document.caretRangeFromPoint(e.clientX, e.clientY);
+        } else if (document.caretPositionFromPoint) { // Firefox 兼容
+            let pos = document.caretPositionFromPoint(e.clientX, e.clientY);
+            if (pos) {
+                dropRange = document.createRange();
+                dropRange.setStart(pos.offsetNode, pos.offset);
+                dropRange.collapse(true);
+            }
+        }
+        
+        // 成功获取到光标位置则直接应用并同步给缓存
+        if (dropRange) {
+            let sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(dropRange);
+            if (typeof saveChatSelection === 'function') saveChatSelection();
+        }
+
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            Array.from(e.dataTransfer.files).forEach(file => {
+                if (file.type.startsWith('image/')) insertImageToChatInput(file);
+            });
+        } else {
+            // 【新增】如果不是文件，检测是否为纯文本或网页HTML元素的拖入
+            let htmlData = e.dataTransfer.getData('text/html');
+            let textData = e.dataTransfer.getData('text/plain');
+            if (htmlData || textData) {
+                // 复用粘贴安全过滤函数，自动在刚才计算好的鼠标光标位置插入文本
+                handleSafePaste(textData, htmlData, !!htmlData);
+            }
+        }
+    });
+
+    // --- 2. 聊天记录区 拖拽逻辑 (动态计算居中 + 防抖解决边框抖动) ---
+    const chatBody = document.getElementById('chat-body');
+
+    chatBody.addEventListener('dragover', (e) => {
+if (isInternalDrag) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        
+        clearTimeout(chatBodyDragTimer); // 阻止抖动关闭
+        
+        // 只有在刚进入拖拽状态时，才执行 1 次定位计算，避免高频计算消耗性能
+        if (!chatBody.classList.contains('drag-over-body')) {
+            chatBody.classList.add('drag-over-body');
+            
+            // 动态计算聊天区相对于浏览器视口的位置
+            const rect = chatBody.getBoundingClientRect();
+            
+            // 将 Tooltip 放置在聊天记录区的正中心
+            chatBodyTooltip.style.left = `${rect.left + rect.width / 2}px`;
+            chatBodyTooltip.style.top = `${rect.top + rect.height / 2}px`;
+            chatBodyTooltip.style.display = 'block';
+        }
+    });
+
+    chatBody.addEventListener('dragleave', (e) => {
+if (isInternalDrag) return;
+        e.preventDefault();
+        // 同样设定 50ms 缓冲期，解决鼠标贴近边框时的疯狂抖动问题
+        chatBodyDragTimer = setTimeout(() => {
+            chatBody.classList.remove('drag-over-body');
+            chatBodyTooltip.style.display = 'none';
+        }, 50);
+    });
+
+    chatBody.addEventListener('drop', (e) => {
+if (isInternalDrag) return;
+        e.preventDefault();
+        clearTimeout(chatBodyDragTimer);
+        chatBody.classList.remove('drag-over-body');
+        chatBodyTooltip.style.display = 'none';
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleChatFilesSelected(e.dataTransfer.files);
+            }
+        });
+
+
+
+
+
+
+
+
+}
+
+    // 核心粘贴处理：包含水桶限制与精准光标跟随插入
+function handleSafePaste(textStr, htmlStr, forceHtml, maxAllowed = MAX_CHAT_INPUT_LENGTH) {
+    const chatInput = document.getElementById('chat-input'); 
+    chatInput.focus();
+    
+    // 1. 获取当前真实选中区与光标状态
+    let sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    let range = sel.getRangeAt(0);
+    
+    // 确保光标严格位于输入区域内，如果失焦则重置到末尾
+    if (!chatInput.contains(range.commonAncestorContainer)) {
+        range = document.createRange();
+        range.selectNodeContents(chatInput);
+        range.collapse(false);
+    }
+    // 2. 清除当前选中的覆盖文本
+    range.deleteContents();
+    
+    if (forceHtml && htmlStr) {
+        if (htmlStr.length > maxAllowed) {
+            htmlStr = htmlStr.substring(0, maxAllowed) + '<br><span style="color:#e53e3e; font-weight:bold;">[内容过长已自动截断]</span>';
+        }
+        let safeHtml = sanitizeChatHtml(htmlStr);
+        
+        // 创建一个文档片段来承接 DOM
+        let tempDiv = document.createElement('div');
+        tempDiv.innerHTML = safeHtml;
+        let frag = document.createDocumentFragment();
+        let node, lastNode;
+        while ((node = tempDiv.firstChild)) {
+            lastNode = frag.appendChild(node);
+        }
+        
+        range.insertNode(frag);
+        
+        // 3. 将光标精确移动到刚刚插入片段的最后
+        if (lastNode) {
+            range = range.cloneRange();
+            range.setStartAfter(lastNode);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+    } else {
+        if (textStr.length > maxAllowed) {
+            textStr = textStr.substring(0, maxAllowed) + '\n[内容过长已自动截断]';
+        }
+        let textNode = document.createTextNode(textStr);
+        range.insertNode(textNode);
+        
+        // 3. 针对纯文本节点精确定位光标
+        range = range.cloneRange();
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+    
+    // 触发更新全局缓存的 selection 状态，保证表情/传图等其他插入不会异常
+    if (typeof saveChatSelection === 'function') {
+        saveChatSelection();
+    }
+}
+
+function dataURItoBlob(dataURI) {
+    const byteString = atob(dataURI.split(',')[1]);
+    const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], { type: mimeString });
+}
+
+function createPreviewImgNode(tempUrl) {
+    const img = document.createElement('img');
+    img.src = tempUrl;
+    img.style.cssText = 'max-width: 120px; max-height: 120px; border-radius: 6px; margin: 4px; vertical-align: middle; opacity: 0.6; border: 2px dashed #4299e1;';
+    img.title = '正在上传图片...';
+    return img;
+}
+
+function insertNodeAtCursor(node) {
+    const sel = window.getSelection();
+    const chatInput = document.getElementById('chat-input');
+    if (sel.getRangeAt && sel.rangeCount) {
+        let range = sel.getRangeAt(0);
+        if (!chatInput.contains(range.commonAncestorContainer)) {
+            chatInput.focus();
+            range = document.createRange();
+            range.selectNodeContents(chatInput);
+            range.collapse(false);
+        }
+        range.deleteContents();
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.setEndAfter(node);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    } else {
+        chatInput.appendChild(node);
+    }
+}
+
+function uploadChatBlob(blob, customName) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        // 指向专用的 chat 临时上传路径，不入共享文件目录
+        xhr.open('POST', SERVER_URL + 'upload/chat');
+        // 若无文件名或文件名为固定 "image.png"，则生成唯一文件名防止覆盖
+        const fileName = customName || (!blob.name || blob.name === 'image.png' ? `chat_img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}.png` : blob.name);
+        xhr.setRequestHeader('X-File-Name', encodeURIComponent(fileName));
+        xhr.onload = () => {
+            if (xhr.status === 200) {
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    const uploadedName = res.file || fileName;
+                    // 使用现有服务标准的 /file/ 路径进行关联展示
+                    const realUrl = res.url || (SERVER_URL + 'file/' + encodeURIComponent(uploadedName));
+                    resolve(realUrl);
+                } catch(e) { reject(e); }
+            } else { reject(new Error('Upload error')); }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.send(blob);
+    });
+}
+
+async function insertImageToChatInput(file) {
+    const tempUrl = URL.createObjectURL(file);
+    const imgNode = createPreviewImgNode(tempUrl);
+    insertNodeAtCursor(imgNode);
+
+    try {
+        const realUrl = await uploadChatBlob(file);
+        imgNode.src = realUrl;
+        imgNode.style.opacity = '1';
+        imgNode.style.border = '1px solid #cbd5e0';
+        imgNode.title = '图片已就绪';
+    } catch(err) {
+        imgNode.remove();
+        showToast('❌ 图片上传失败');
+    }
+}
+
+function sendChatFile(ip, port, e) {
+    if (e) e.stopPropagation();
+    const pass = prompt(`尝试连接到 ${ip}:${port}\n如果对方设置了访问密码请在此输入（未设置留空即可）：`);
+    if (pass === null) return; 
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true; // 修改点1：允许一次选择多个文件
+    fileInput.onchange = () => {
+        if(!fileInput.files.length) return;
+        
+        // 修改点2：触发并显示已有的“上传任务”控件 UI
+        const btn = document.getElementById('upload-task-btn');
+        if (btn && !hasUploadStarted) {
+            btn.style.display = 'block';
+            hasUploadStarted = true;
+        }
+        hasViewedFinished = false;
+
+        // 遍历所有选中的文件，推入现成的全局上传队列
+        const files = fileInput.files;
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            uploadQueue.push({
+                file: file,
+                name: file.name,
+                size: file.size,
+                status: 'pending',
+                loaded: 0,
+                targetToken: 'default',
+                // 专属标记：用于告诉 processNextUpload 这是一个 PC 直传任务
+                isPcUpload: true,
+                pcUrl: `http://${ip}:${port}/qkLANfile/upload/default`,
+                pcPass: pass,
+                previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+            });
+            totalUpFiles++;
+            totalUpBytes += file.size;
+        }
+        
+        renderUploadList(); 
+        
+        // 如果队列当前空闲，则启动引擎
+        if (!isUploadingTask) {
+            startUploadQueue();
+        }
+    };
+    fileInput.click();
+}
+
+let lastPingTime = 0;
+function resetTimer() {
+  const now = Date.now();
+  if (now - lastPingTime < 15000 || timeLeft > 150) return;
+  lastPingTime = now;
+  fetch(SERVER_URL + 'keepaliveping').then(r=>r.text()).then(t=>{ timeLeft = parseInt(t) || 300; }).catch(()=>{});
+}
+
+function selectAll() { document.querySelectorAll('.cb-file:not([disabled])').forEach(cb => cb.checked = true); }
+function deselectAll() { document.querySelectorAll('.cb-file:not([disabled])').forEach(cb => cb.checked = false); }
+function invertSelection() { document.querySelectorAll('.cb-file:not([disabled])').forEach(cb => cb.checked = !cb.checked); }
+
+async function batchDownload() {
+  const checkboxes = document.querySelectorAll('.cb-file:checked:not([disabled])');
+  if(checkboxes.length === 0) { showToast('⚠️ 请先勾选需要下载的文件！'); return; }
+  showToast(`⏳ 即将下载 ${checkboxes.length} 个文件...\n若无反应请在浏览器弹窗拦截器中允许此网站`, 5000);
+  try {
+    const res = await fetch(SERVER_URL + 'ping', { method: 'GET', cache: 'no-cache' });
+    if (res.status !== 200) throw new Error('Not 200');
+  } catch (e) {
+    showToast('❌ 批量下载失败：无法连接服务器');
+    disableAllActions(); return;
+  }
+  resetTimer();
+  checkboxes.forEach((cb, index) => {
+    setTimeout(() => {
+      const a = document.createElement('a'); a.href = cb.value; a.download = '';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }, index * 400);
+  });
+}
+
+// === 2. 改进的断网禁用逻辑 ===
+function disableAllActions() {
+    if (timerId) clearInterval(timerId);
+    stopChatPolling();
+  
+    const tb = document.getElementById('timer-box');
+    if (tb) {
+        // 在“服务已关闭”旁增加“手动重连”按钮
+        tb.innerHTML = '⛔ 服务已关闭 <span onclick="reconnectServer()" style="color:#4299e1; cursor:pointer; text-decoration:underline; font-size:13px; margin-left:12px; transition: color 0.2s;">🔄 手动重连</span>';
+        tb.style.color = '#e53e3e'; 
+        tb.style.fontWeight = 'bold';
+    }
+  
+    // 遍历所有 button：用 dataset 记住被关闭前是“启用”状态的按钮
+    document.querySelectorAll('button').forEach(btn => {
+        if (!btn.disabled) {
+            btn.dataset.wasActive = 'true'; // 打上标记，证明它有资格被恢复
+            btn.dataset.oldTitle = btn.title || '';
+            btn.disabled = true;
+            btn.style.backgroundColor = '#cbd5e0';
+            btn.style.cursor = 'not-allowed';
+            btn.title = '服务已关闭';
+        }
+    });
+  
+    // 记住原先可以勾选的复选框
+    document.querySelectorAll('.cb-file').forEach(cb => {
+        if (!cb.disabled) {
+            cb.dataset.wasActive = 'true';
+            cb.disabled = true;
+        }
+    });
+  
+    // 禁用所有超链接：弃用破坏性的 removeAttribute，改用 CSS 控制
+    document.querySelectorAll('a').forEach(link => {
+        link.dataset.oldPointerEvents = link.style.pointerEvents || '';
+        link.style.pointerEvents = 'none'; // 关键：禁止鼠标点击事件
+        link.style.cursor = 'not-allowed';
+        link.style.opacity = '0.6';
+    });
+}
+
+// === 3. 新增重连与界面还原函数 ===
+async function reconnectServer() {
+    const tb = document.getElementById('timer-box');
+    // 防止狂点重复触发
+    tb.innerHTML = '⏳ 正在尝试重连...';
+    tb.style.color = '#ed8936';
+
+    try {
+        // 尝试请求服务器的存活验证接口
+        const res = await fetch(SERVER_URL + 'keepaliveping', { method: 'GET', cache: 'no-cache' });
+        if (!res.ok) throw new Error('Network error');
+        const remainText = await res.text();
+        let remain = parseInt(remainText);
+        if (isNaN(remain) || remain <= 0) remain = 300;
+
+        // 1. 恢复顶部倒计时 UI 和全局计时器
+        timeLeft = remain;
+        tb.innerHTML = '⏳ 服务闲置关闭倒数: <span id="countdown"></span>';
+        tb.style.color = '#718096';
+        tb.style.fontWeight = '500';
+        startGlobalTimer();
+
+        // 2. 仅恢复在关闭前处于活跃状态的按钮（完美避开因权限限制而灰掉的上传按钮）
+        document.querySelectorAll('button').forEach(btn => {
+            if (btn.dataset.wasActive === 'true') {
+                btn.disabled = false;
+                btn.style.cursor = 'pointer';
+                btn.title = btn.dataset.oldTitle || '';
+                
+                // 根据原始类名恢复按钮基础颜色
+                if (btn.classList.contains('btn-upload')) btn.style.backgroundColor = '#ed8936';
+                else if (btn.classList.contains('btn-download')) btn.style.backgroundColor = '#48bb78';
+                else btn.style.backgroundColor = '';
+
+                // 清除辅助标记
+                delete btn.dataset.wasActive;
+                delete btn.dataset.oldTitle;
+            }
+        });
+
+        // 3. 恢复复选框
+        document.querySelectorAll('.cb-file').forEach(cb => {
+             if (cb.dataset.wasActive === 'true') {
+                 cb.disabled = false;
+                 delete cb.dataset.wasActive;
+             }
+        });
+
+        // 4. 恢复超链接的点击能力和视觉效果
+        document.querySelectorAll('a').forEach(link => {
+            link.style.pointerEvents = link.dataset.oldPointerEvents || '';
+            link.style.cursor = 'pointer';
+            link.style.opacity = '1';
+            delete link.dataset.oldPointerEvents;
+        });
+
+        // 5. 重新拉取最新的共享文件列表（防止下线期间有新文件上传）
+        fetchFiles();
+
+        // 6. 如果聊天窗口此刻是开着的，恢复聊天长轮询，获取断线期间的新消息
+        if (chatState === 2) { 
+            if (!isChatPolling) {
+                isChatPolling = true;
+                longPollChat();
+            }
+        }
+
+        showToast('✅ 重连成功，服务已恢复！');
+
+    } catch (e) {
+        // 若依然无法连通，退回到之前的关闭状态，方便用户再次尝试重连
+        tb.innerHTML = '⛔ 服务已关闭 <span onclick="reconnectServer()" style="color:#4299e1; cursor:pointer; text-decoration:underline; font-size:13px; margin-left:12px; transition: color 0.2s;">🔄 手动重连</span>';
+        tb.style.color = '#e53e3e';
+        showToast('❌ 重连失败，可能服务器暂未恢复');
+    }
+}
+
+
+async function triggerUpload(targetToken, targetFolder) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(SERVER_URL + 'keepaliveping', { method: 'GET', cache: 'no-cache', signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (res.ok) {
+      currentUploadToken = targetToken; 
+      currentTargetFolder = targetFolder;
+      document.getElementById('fileUploader').click(); 
+      resetTimer();
+    } else { throw new Error('Server not OK'); }
+  } catch (e) {
+    if (e.name === 'AbortError' || e.message === 'Failed to fetch') showToast('❌ 上传失败：服务器验证超时，可能已断开', 4000);
+    else showToast('❌ 上传失败：无法连接服务器', 4000);
+    disableAllActions();
+  }
+}
+
+
+// ================= 新增：上传任务队列及窗口 UI 控制逻辑 =================
+let uploadQueue = [];            // 待上传和上传中队列
+let uploadHistoryList = [];      // 历史记录（成功/失败）
+let isUploadingTask = false;     // 是否正在执行上传
+let totalUpBytes = 0;            // 记录当前批次总字节数
+let totalUpFiles = 0;            // 记录当前批次总文件数
+let completedUpFiles = 0;        // 已经完成(成功)的文件数
+let lastUpBytes = 0;             // 上一秒的上传量(用于计算速度)
+let upSpeed = 0;                 // 当前速度 B/s
+let speedTimer = null;           // 速度计算定时器
+let hasUploadStarted = false;    // 是否曾添加过文件（用于永久开启控件）
+let hasViewedFinished = false;   // 状态：完成 100% 后用户是否已经点开看过了
+
+// 动态计算所有已传输的真实进度量
+function calculateTotalLoaded() {
+    let loaded = 0;
+    uploadHistoryList.forEach(t => { if(t.status === 'success') loaded += t.size; });
+    uploadQueue.forEach(t => loaded += (t.loaded || 0));
+    return loaded;
+}
+
+// 替换原有的串行阻塞 doUpload，改为加入队列并行/异步处理
+async function doUpload(files) {
+    if (!files || files.length === 0) return;
+    
+    // 首次上传，开启右上角控件显示并永久保留
+    const btn = document.getElementById('upload-task-btn');
+    if (btn && !hasUploadStarted) {
+        btn.style.display = 'block';
+        hasUploadStarted = true;
+    }
+    
+    // 只要有新文件加入，重置"已阅"状态
+    hasViewedFinished = false;
+
+    // 解析入列
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        uploadQueue.push({
+            file: file,
+            name: file.name,
+            size: file.size,
+            status: 'pending',
+            loaded: 0,
+            targetToken: currentUploadToken,
+            targetFolder: currentTargetFolder,
+            previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+        });
+        totalUpFiles++;
+        totalUpBytes += file.size;
+    }
+    
+    renderUploadList(); // 渲染进窗口 UI
+    
+    // 若队列处于空闲，则启动引擎
+    if (!isUploadingTask) {
+        startUploadQueue();
+    }
+}
+
+function startUploadQueue() {
+    isUploadingTask = true;
+    if (!speedTimer) {
+        lastUpBytes = calculateTotalLoaded();
+        speedTimer = setInterval(() => {
+            const currentLoaded = calculateTotalLoaded();
+            upSpeed = currentLoaded - lastUpBytes;
+            lastUpBytes = currentLoaded;
+            updateUploadUI();
+        }, 1000);
+    }
+    processNextUpload();
+}
+
+async function processNextUpload() {
+    const taskIndex = uploadQueue.findIndex(t => t.status === 'pending');
+    
+    // 队列全部消化完毕
+    if (taskIndex === -1) {
+        isUploadingTask = false;
+        if (speedTimer) { clearInterval(speedTimer); speedTimer = null; }
+        upSpeed = 0;
+        updateUploadUI(); // 做最后一次 100% UI 更新
+        
+        // 如果结束时窗口正好是打开状态，自动触发恢复黑色默认文字
+        const win = document.getElementById('upload-list-window');
+        if (win && win.style.display === 'flex') {
+            hasViewedFinished = true;
+            resetUploadBtnText();
+        }
+        return;
+    }
+    
+    const task = uploadQueue[taskIndex];
+    task.status = 'uploading';
+    renderUploadList();
+    
+    try {
+        await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            
+            // 核心修改：判断是否为 PC 直传，若是则使用指定的 URL 和 密码鉴权
+            if (task.isPcUpload) {
+                xhr.open('POST', task.pcUrl);
+                if (task.pcPass) xhr.setRequestHeader('Authorization', 'Basic ' + btoa('user:' + task.pcPass));
+            } else {
+                xhr.open('POST', SERVER_URL + 'upload/' + task.targetToken);
+            }
+            
+            xhr.setRequestHeader('X-File-Name', encodeURIComponent(task.name));
+            
+            // 实时侦听 xhr 原生进度
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    task.loaded = e.loaded;
+                    updateUploadUI();
+                }
+            };
+            
+            xhr.onload = () => {
+                if(xhr.status === 200) {
+                    // 兼容容错：PC 端直传接口的返回 JSON 结构可能与自身 Server 不同
+                    try {
+                        const res = JSON.parse(xhr.responseText);
+                        task.name = res.file || task.name;
+                    } catch(err) {}
+                    
+                    task.status = 'success';
+                    task.loaded = task.size;
+                    
+                    if (!task.isPcUpload) {
+                        // 只有共享文件上传，才同步到系统并刷新列表
+                        recentUploads.push({
+                            uploadedName: task.name,
+                            targetName: task.targetToken === 'default' ? 'default' : task.targetFolder
+                        });
+                        fetchFiles().then(() => showToast(`✅ 已上传：${task.name}`));
+                    } else {
+                        // PC 端直传成功，无需刷列表，独立提示
+                        showToast(`✅ 已发送至目标设备：${task.name}`);
+                    }
+                    
+                    resolve();
+                } else {
+                    reject(new Error('HTTP Status ' + xhr.status));
+                }
+            };
+            xhr.onerror = () => reject(new Error('Network error'));
+            xhr.send(task.file);
+        });
+        completedUpFiles++; // 成功才计入 completed 数量
+    } catch (e) {
+        task.status = 'error';
+        task.loaded = 0;
+        // 失败时，扣除其原本带来的总文件期望值，防止永远无法 100% 满额
+        totalUpBytes -= task.size;
+        totalUpFiles -= 1;
+    }
+    
+    // 移出处理队列，转入历史列表头部
+    uploadQueue.splice(taskIndex, 1);
+    uploadHistoryList.unshift(task);
+    
+    renderUploadList();
+    processNextUpload(); // 递归执行下一个
+}
+
+function updateUploadUI() {
+    const loadedBytes = calculateTotalLoaded();
+    const percent = totalUpBytes === 0 ? (totalUpFiles > 0 ? 100 : 0) : Math.floor((loadedBytes / totalUpBytes) * 100);
+    const remainCount = totalUpFiles - completedUpFiles;
+    
+    const btn = document.getElementById('upload-task-btn');
+    if (btn) {
+        // 只有正在上传任务，或者 100% 了但没点开看过时才显示橙色进度
+        if (isUploadingTask || (remainCount === 0 && totalUpFiles > 0 && !hasViewedFinished)) {
+            btn.style.color = '#dd6b20'; 
+            btn.innerText = `${percent}% ${remainCount}`;
+        }
+    }
+    
+    // 窗口内的详细进度条及通透光带控制
+    const fill = document.getElementById('upload-progress-fill-neon');
+    const text = document.getElementById('upload-progress-text');
+    if (fill) fill.style.width = `${percent}%`;
+    if (text) {
+        text.innerText = `${percent}% ${completedUpFiles}/${totalUpFiles} ${formatBytes(upSpeed)}/s ${formatBytes(loadedBytes)} / ${formatBytes(totalUpBytes)}`;
+    }
+}
+
+// 控件点击事件：切换窗口，或在特定状态下清理文字
+function toggleUploadWindow(e) {
+    if(e) e.stopPropagation();
+    const win = document.getElementById('upload-list-window');
+    if (!win) return;
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        // 若处于 100% 完成且 0 剩余的状态点开，清空进度，变回黑色
+        if (!isUploadingTask && completedUpFiles === totalUpFiles && totalUpFiles > 0) {
+            hasViewedFinished = true;
+            resetUploadBtnText();
+        }
+    }
+}
+
+// 全局监听：点击其它位置自动最小化窗口
+document.addEventListener('click', (e) => {
+    const win = document.getElementById('upload-list-window');
+    const btn = document.getElementById('upload-task-btn');
+    if (win && win.style.display === 'flex') {
+        if (!win.contains(e.target) && btn && !btn.contains(e.target)) {
+            win.style.display = 'none';
+        }
+    }
+});
+
+function resetUploadBtnText() {
+    const btn = document.getElementById('upload-task-btn');
+    if (btn) {
+        btn.style.color = '#333';
+        btn.innerText = '上传任务';
+    }
+}
+
+// 刷新 b.区域待上传和历史预览列表
+function renderUploadList() {
+    const listDiv = document.getElementById('upload-list-content');
+    if (!listDiv) return;
+    
+    let html = '';
+    const allTasks = [...uploadQueue, ...uploadHistoryList];
+    
+    if (allTasks.length === 0) {
+        html = '<div style="text-align:center; color:#a0aec0; font-size:12px; padding-top:20px;">暂无上传任务</div>';
+    } else {
+        allTasks.forEach(t => {
+            let icon = '📄';
+            if (t.previewUrl) {
+                icon = `<img src="${t.previewUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #edf2f7;">`;
+            } else {
+                let ext = t.name.includes('.') ? t.name.split('.').pop().toLowerCase() : '';
+                if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) icon = '🎬';
+                else if (['mp3', 'wav', 'flac'].includes(ext)) icon = '🎵';
+                else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) icon = '📦';
+                else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) icon = '🖼️';
+            }
+            
+            let statusHtml = '';
+            if (t.status === 'uploading') statusHtml = '<span style="color:#ed8936; font-weight:bold;">上传中...</span>';
+            else if (t.status === 'pending') statusHtml = '<span style="color:#a0aec0;">等待上传</span>';
+            else if (t.status === 'success') statusHtml = '<span style="color:#48bb78;">已完成</span>';
+            else statusHtml = '<span style="color:#e53e3e;">上传失败</span>';
+            
+            html += `
+            <div style="display:flex; align-items:center; gap:10px; padding:8px; background:${t.status==='uploading'?'#fffaf0':'#fff'}; border:1px solid ${t.status==='uploading'?'#fbd38d':'#edf2f7'}; border-radius:6px; box-shadow:0 1px 2px rgba(0,0,0,0.02);">
+                <div style="width:32px; height:32px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">${icon}</div>
+                <div style="flex:1; min-width:0; overflow:hidden; display:flex; flex-direction:column; gap:2px;">
+                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:bold; font-size:12px; color:#2d3748;" title="${t.name}">${t.name}</div>
+                    <div style="font-size:11px; color:#718096; display:flex; justify-content:space-between;">
+                        <span>${formatBytes(t.size)}</span>
+                        <span>${statusHtml}</span>
+                    </div>
+                </div>
+            </div>`;
+        });
+    }
+    
+    listDiv.innerHTML = html;
+}
+// ================= 上传任务逻辑结束 =================
+
+
+
+let dateAsc = false; let sizeAsc = false; let npState = 0;
+function getRows() { return Array.from(document.querySelectorAll('.file-row')); }
+function updateTable(rows) { const tbody = document.getElementById('file-list-body'); rows.forEach(r => tbody.appendChild(r)); }
+
+function sortByDate() {
+  dateAsc = !dateAsc;
+  let rows = getRows().sort((a,b) => {
+    let vA = parseInt(a.dataset.date); let vB = parseInt(b.dataset.date);
+    return dateAsc ? vA - vB : vB - vA;
+  }); 
+  updateTable(rows);
+  document.getElementById('sort-date-icon').innerText = dateAsc ? '(⬆)' : '(⬇)';
+}
+
+function sortBySize() {
+  sizeAsc = !sizeAsc;
+  let rows = getRows().sort((a,b) => {
+    let vA = parseInt(a.dataset.size); let vB = parseInt(b.dataset.size);
+    return sizeAsc ? vA - vB : vB - vA;
+  }); 
+  updateTable(rows);
+  document.getElementById('sort-size-icon').innerText = sizeAsc ? '(⬆)' : '(⬇)';
+}
+
+function sortByNamePath() {
+  npState = (npState + 1) % 4;
+  let rows = getRows().sort((a,b) => {
+    let nA = a.dataset.name; let nB = b.dataset.name;
+    let pA = a.dataset.path; let pB = b.dataset.path;
+    if(npState === 1) return nA.localeCompare(nB);
+    if(npState === 2) return nB.localeCompare(nA);
+    if(npState === 3) return pA.localeCompare(pB);
+    if(npState === 0) return pB.localeCompare(pA);
+  }); 
+  updateTable(rows);
+  const states = ['(路径⬇)', '(名称⬆)', '(名称⬇)', '(路径⬆)'];
+  document.getElementById('sort-np-icon').innerText = states[npState];
+}
+
+let galleryImages = []; let galleryNames = []; let currentImgIndex = 0;
+let isDragging = false, startX = 0, startY = 0, isAnimating = false, animTimer = null, lastTapTime = 0, isRotated = false;
+
+function getImgSafe(offset) {
+  const len = galleryImages.length; if(len === 0) return '';
+  return galleryImages[(currentImgIndex + offset % len + len) % len];
+}
+
+function toggleRotate(e) {
+  if(e) e.stopPropagation();
+  isRotated = !isRotated;
+  const img = document.getElementById('lb-img-curr');
+  if (img) {
+    if (isRotated) img.classList.add('rotated');
+    else img.classList.remove('rotated');
+  }
+  resetTimer();
+}
+
+function resetRotation() {
+  isRotated = false;
+  const img = document.getElementById('lb-img-curr');
+  if (img) img.classList.remove('rotated');
+}
+
+function updateGalleryUI() {
+  resetRotation();
+  document.getElementById('lb-img-prev').src = galleryImages.length > 1 ? getImgSafe(-1) : '';
+  document.getElementById('lb-img-curr').src = getImgSafe(0);
+  document.getElementById('lb-img-next').src = galleryImages.length > 1 ? getImgSafe(1) : '';
+  const currentFileName = galleryNames[currentImgIndex] || '';
+  const counterText = (currentImgIndex + 1) + ' / ' + galleryImages.length + (currentFileName ? ' ' + currentFileName : '');
+  const counterEl = document.getElementById('lb-counter');
+  counterEl.innerText = counterText;
+  counterEl.title = counterText;
+  const track = document.getElementById('lb-track');
+  track.style.transition = 'none';
+  track.style.transform = 'translateX(-100vw)';
+}
+
+// 【修改点3】：增加 isChat 标记，默认 false
+function openGallery(imgUrl, isChat = false) {
+  if(animTimer) clearTimeout(animTimer);
+  isAnimating = false; isDragging = false;
+  
+  let links;
+  // 分离逻辑：依据来源获取专属范围内的图片
+  if (isChat) {
+      links = Array.from(document.querySelectorAll('.chat-bubble img'));
+  } else {
+      links = Array.from(document.querySelectorAll('.gallery-link'));
+  }
+  
+  galleryImages = links.map(el => el.tagName === 'IMG' ? el.src : el.querySelector('img').src);
+  galleryNames = links.map(el => {
+      if (isChat) return '聊天图片';
+      const row = el.closest('tr');
+      return row ? row.dataset.name : '';
+  });
+  
+  currentImgIndex = galleryImages.indexOf(imgUrl);
+  if(currentImgIndex === -1) currentImgIndex = 0;
+  
+  updateGalleryUI();
+  document.getElementById('lightbox').style.display = 'block';
+}
+
+function closeGallery(e, force = false) {
+  if (force || (e && (e.target.id === 'lightbox' || e.target.classList.contains('lb-slide')))) {
+    document.getElementById('lightbox').style.display = 'none';
+    if(animTimer) clearTimeout(animTimer);
+    isAnimating = false; isDragging = false;
+    resetRotation();
+    resetTimer();
+  }
+}
+
+function changeImg(dir, e) {
+  if(e) e.stopPropagation();
+  if (galleryImages.length <= 1) return;
+  if (isAnimating) { clearTimeout(animTimer); isAnimating = false; }
+  isAnimating = true;
+  animTimer = setTimeout(() => { isAnimating = false; }, 350);
+  const track = document.getElementById('lb-track');
+  track.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
+  track.style.transform = dir === 1 ? 'translateX(-200vw)' : 'translateX(0vw)';
+  track.addEventListener('transitionend', function handler() {
+    track.removeEventListener('transitionend', handler);
+    currentImgIndex = (currentImgIndex + dir % galleryImages.length + galleryImages.length) % galleryImages.length;
+    updateGalleryUI();
+    clearTimeout(animTimer);
+    isAnimating = false;
+  });
+  resetTimer();
+}
+
+
+        /* 聊天相关的 JS 逻辑块 */
+
+let chatState = 0; 
+let isChatPolling = false;
+let chatUnreadCount = 0;
+let lastMsgTime = 0; // 记录当前最后一条消息的时间戳
+let pendingNewMsgs = 0; // 记录底部气泡的新消息数
+let chatMembers = new Set();
+let savedChatPos = null;
+let isChatMaximized = false;
+
+// 监听滚动事件，触底则消除新消息气泡 +显示“复制末条”控制（滑动底部 && 倒数第一条非自己发送 &&有文本 才显示） ===
+document.getElementById('chat-body').addEventListener('scroll', function() {
+    let isScrolledToBottom = this.scrollHeight - this.clientHeight <= this.scrollTop + 50;
+    let btnCopy = document.getElementById('btn-copy-last');
+    
+    if (isScrolledToBottom) {
+        document.getElementById('new-msg-bubble').style.display = 'none';
+        pendingNewMsgs = 0;
+        // 只有倒数第一条消息不是自己发送的时才显示复制按钮
+        if (lastMsgSender && lastMsgSender !== myIpId && lastMsgHasText) {
+            btnCopy.style.display = 'block';
+        } else {
+            btnCopy.style.display = 'none';
+        }
+    } else {
+        btnCopy.style.display = 'none';
+    }
+});
+
+// 强制控制复制按钮是否呈现
+function scrollToChatBottom() {
+    let body = document.getElementById('chat-body');
+    if (body) body.scrollTop = body.scrollHeight;
+    let bubbleEl = document.getElementById('new-msg-bubble');
+    if (bubbleEl) bubbleEl.style.display = 'none';
+    pendingNewMsgs = 0;
+    
+    let btnCopy = document.getElementById('btn-copy-last');
+    if (btnCopy && lastMsgSender && lastMsgSender !== myIpId && lastMsgHasText) {
+        btnCopy.style.display = 'block';
+    }
+}
+
+// === 文件选择与拖拽上传  兼容标准 DOM ===
+function openChatFilePicker() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.onchange = () => {
+        if(fileInput.files.length > 0) {
+            handleChatFilesSelected(fileInput.files);
+        }
+    };
+    fileInput.click();
+}
+
+async function handleChatFilesSelected(files) {
+    if (!files || files.length === 0) return;
+    let target = document.getElementById('chat-target').value.trim();
+    showToast(`⏳ 正在发送 ${files.length} 个文件...`, 3000);
+    
+    let uploadedItems = [];
+    for(let i = 0; i < files.length; i++) {
+        let file = files[i];
+        try {
+            let res = await new Promise((resolve, reject) => {
+                let xhr = new XMLHttpRequest();
+                xhr.open('POST', SERVER_URL + 'upload/chatfile');
+                xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+                xhr.onload = () => { if(xhr.status === 200) resolve(JSON.parse(xhr.responseText)); else reject(); };
+                xhr.onerror = reject;
+                xhr.send(file);
+            });
+            uploadedItems.push(res);
+        } catch(e) { showToast(`❌ 文件 ${file.name} 发送失败`); }
+    }
+    
+    if(uploadedItems.length > 0) {
+        let html = buildChatFileMessageHtml(uploadedItems);
+        try {
+            const res = await fetch(`${SERVER_URL}chat/send?a=${encodeURIComponent(target)}&last=${lastMsgTime}&c=0`, {
+                method: 'POST', body: html
+            });
+            const newData = await res.json();
+            if (newData && newData.length > 0) {
+                renderChat(newData, true); 
+                scrollToChatBottom();
+            }
+        } catch(e) { showToast('发送失败'); }
+    }
+}
+
+// 使用 div 替换折叠组件，解决下载冲突及提供图片微预览缩略图
+function buildChatFileMessageHtml(items) {
+    let count = items.length;
+    let html = `<div class="chat-file-details">
+        <div style="color:#3182ce; font-size:12px; font-weight:bold; margin-bottom:4px;">📂 发送了 ${count} 个文件</div>
+        <div style="display:flex; flex-direction:column; gap:3px;">`; // gap:2px 稍微保留一点缝隙
+    
+    items.forEach(item => {
+        let ext = item.file.includes('.') ? item.file.split('.').pop().toLowerCase() : '';
+        let isImg = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
+        let fileIcon = '📄';
+        if (['zip', 'rar', '7z', 'tar', 'gz', 'iso'].includes(ext)) fileIcon = '📦';
+        else if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) fileIcon = '🎬';
+        else if (isImg) fileIcon = '🖼️';
+        else if (['mp3', 'wav', 'flac'].includes(ext)) fileIcon = '🎵';
+
+        let sizeStr = formatBytes(item.size || 0);
+        let dateStr = item.date ? new Date(item.date).toLocaleString() : '-';
+        let safePath = (item.fullPath || '').replace(/\\/g, '/');
+        
+        let previewHtml = '';
+        if (isImg) {
+            previewHtml = `<img src="${item.url}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #e2e8f0; cursor:pointer;" onclick="event.stopPropagation(); if(typeof openGallery==='function') openGallery(this.src, true)" title="点击预览" />`;
+        } else {
+            previewHtml = `<div style="font-size:20px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; background:#edf2f7; border-radius:4px;" title="${item.file}">${fileIcon}</div>`;
+        }
+
+        // 修改点：调整了 padding、去除了标题及路径的冗余 margin，增加了 line-height 以压缩留白
+        html += `<div style="background:rgba(0,0,0,0.03); padding:3px 6px; border-radius:6px; font-size:12px; display:flex; justify-content:space-between; align-items:center; border:1px solid rgba(0,0,0,0.05); line-height:1.2;">
+            <div style="margin-right:8px; flex-shrink:0;">${previewHtml}</div>
+            <div style="flex:1; min-width:0; margin-right:8px; display:flex; flex-direction:column; justify-content:center;">
+                <div style="font-weight:bold; color:#2d3748; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px;" title="${item.file}">${item.file} <span style="font-weight:normal; color:#718096;">(${sizeStr})</span></div>
+                <div style="color:#a0aec0; font-size:10px; margin-top:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${safePath}">${safePath} | ${dateStr}</div>
+            </div>
+            <a href="${item.url}?download=true" download style="background:#48bb78; color:white; padding:4px 8px; border-radius:4px; text-decoration:none; font-weight:bold; white-space:nowrap; flex-shrink:0;">⬇ 下载</a>
+        </div>`;
+    });
+    
+    html += `</div></div>`;
+    return html;
+}
+
+function toggleChat() {
+  let win = document.getElementById('chat-window');
+  if (win.style.display !== 'none') {
+    minChat();
+  } else {
+    win.style.display = 'flex'; chatState = 2; chatUnreadCount = 0; updateBadge();
+    const b = document.getElementById('chat-body'); if(b) b.scrollTop = b.scrollHeight;
+    
+    // 打开时，立刻将被服务端探测过的存活IP列入联系人列表
+    if (activePings) {
+        Object.keys(activePings).forEach(ip => chatMembers.add(ip.split('.').pop()));
+    }
+    
+    // 【修改点1】：增加安全判定，防止报错阻断执行
+    if (typeof renderMembers === 'function') {
+        renderMembers();
+    }
+
+    // 启动独立的长轮询模式（由于上面报错被修复，一打开聊天室就能立刻开始加载数据了）
+    if (!isChatPolling) { 
+        isChatPolling = true; 
+        longPollChat();
+    }
+  }
+  resetTimer();
+}
+
+// 补充缺失的在线成员渲染函数，更新气泡2个数量
+function renderMembers() {
+    let btn = document.getElementById('btn-show-members');
+    if (btn) {
+        let pcCount = 0;
+        let chatCount = 0;
+        
+        // 核心修改：分离计算带端口对象与纯聊天对象
+        chatMembers.forEach(id => {
+            if (id.includes(':')) {
+                pcCount++;
+            } else {
+                chatCount++;
+            }
+        });
+        
+        // 渲染格式：端口用户数:聊天用户数 （例如 1:2）
+        btn.innerText = `${pcCount}:${chatCount}`;
+    }
+}
+
+// 刷新近期3个目标的UI
+function updateRecentTargetsUI() {
+    let container = document.getElementById('recent-targets');
+    if (!container) return;
+    container.innerHTML = '';
+    recentSpeakers.forEach(id => {
+        let badge = document.createElement('span');
+        badge.innerText = id;
+        badge.style.cssText = 'background:#e2e8f0; color:#4a5568; padding:2px 4px; border-radius:4px; cursor:pointer; transition:background 0.2s; user-select:none;';
+        badge.onmouseover = () => badge.style.background = '#cbd5e0';
+        badge.onmouseout = () => badge.style.background = '#e2e8f0';
+        badge.onclick = () => setTarget(id);
+        container.appendChild(badge);
+    });
+}
+
+function minChat(e) {
+  if (e) e.stopPropagation();
+  document.getElementById('chat-window').style.display = 'none';
+  chatState = 1;
+}
+
+function maxChat(e) {
+  if (e) e.stopPropagation();
+  let win = document.getElementById('chat-window');
+  let btn = document.getElementById('chat-max-btn');
+  if(isChatMaximized) {
+    if(savedChatPos) {
+      win.style.width = savedChatPos.width;
+      win.style.height = savedChatPos.height;
+      win.style.left = savedChatPos.left;
+      win.style.top = savedChatPos.top;
+      win.style.right = savedChatPos.right;
+      win.style.bottom = savedChatPos.bottom;
+    } else {
+      win.style.width = '432px'; win.style.height = '550px'; win.style.left = 'calc(50vw - 216px)'; win.style.top = '20px'; win.style.right = 'auto'; win.style.bottom = 'auto';
+    }
+    if(btn) btn.innerText = '🔲'; btn.title="最大化";
+    isChatMaximized = false;
+  } else {
+    savedChatPos = { width: win.style.width, height: win.style.height, left: win.style.left, top: win.style.top, right: win.style.right, bottom: win.style.bottom };
+    win.style.width = '90vw'; win.style.height = '90vh'; win.style.left = '5vw'; win.style.top = '5vh'; win.style.right = 'auto'; win.style.bottom = 'auto';
+    if(btn) btn.innerText = ' ∇ '; btn.title="还原";
+    isChatMaximized = true;
+  }
+}
+
+function closeChat(e) {
+  if (e) e.stopPropagation();
+  document.getElementById('chat-window').style.display = 'none';
+  chatState = 0; chatUnreadCount = 0; updateBadge();
+  stopChatPolling();
+}
+
+function stopChatPolling() { isChatPolling = false; }
+
+function updateBadge() {
+  let badge = document.getElementById('chat-badge');
+  if(chatUnreadCount > 0 && chatState !== 2) { badge.style.display = 'inline-block'; badge.innerText = chatUnreadCount; }
+  else { badge.style.display = 'none'; }
+}
+
+function copyLastMsg() {
+  let msgs = document.querySelectorAll('.chat-bubble');
+  if(msgs.length === 0) return;
+  let text = msgs[msgs.length - 1].innerText;
+  let ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); showToast('✅ 已成功复制最近一条消息'); }
+  catch(err) { showToast('❌ 复制失败，请点击消息气泡手动选择', 7000); }
+  document.body.removeChild(ta);
+}
+
+// 独立的全新长轮询轮询机制
+async function longPollChat() {
+  if (!isChatPolling) return;
+  try {
+// 【新增】长轮询期间同步请求 keepaliveping，确保所有用户实时互通在线 IP
+    fetch(SERVER_URL + 'keepaliveping', { method: 'GET', cache: 'no-cache' })
+    .then(r => r.json())
+    .then(data => {
+        if (data && data.actionPings) {
+            activePings = data.actionPings;
+            Object.keys(activePings).forEach(ip => chatMembers.add(ip.split('.').pop()));
+            if (typeof renderMembers === 'function') renderMembers();
+        }
+    }).catch(()=>{});
+
+    // 携带上次时间戳和等待秒数(25s)进行长轮询
+    let r = await fetch(`${SERVER_URL}chat/get?last=${lastMsgTime}&c=25`, { cache: 'no-cache' });
+    if (r.status === 200) {
+      let data = await r.json();
+      if (data && data.length > 0) {
+        if (chatState === 1) { chatUnreadCount += data.length; updateBadge(); }
+        renderChat(data, lastMsgTime > 0);
+      }
+    }
+  } catch (e) {
+    // 遇到异常等待 3 秒再重试
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  // 保持循环
+  if (isChatPolling) setTimeout(longPollChat, 500);
+}
+
+// 安全 HTML 过滤与渲染解析
+function sanitizeChatHtml(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const dangerous = doc.querySelectorAll('script, iframe, object, embed, style, link');
+    dangerous.forEach(el => el.remove());
+    
+    const allElements = doc.body.querySelectorAll('*');
+    allElements.forEach(el => {
+        const attrs = Array.from(el.attributes);
+        attrs.forEach(attr => {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith('on') || attr.value.trim().toLowerCase().startsWith('javascript:')) {
+                el.removeAttribute(attr.name);
+            }
+        });
+        // 【修改点】：删除了这里的 img onclick 绑定逻辑，防止被 innerHTML 序列化吃掉
+    });
+    return doc.body.innerHTML;
+}
+
+// 模态弹窗状态管理变量：记录当前弹窗内容是否处于渲染模式
+let modalIsRenderMode = true;
+let currentModalRawContent = '';
+ 
+function toggleModalRenderMode() {
+    modalIsRenderMode = !modalIsRenderMode;
+    const textEl = document.getElementById('msg-modal-text');
+    const renderEl = document.getElementById('msg-modal-render-view');
+    const toggleBtn = document.getElementById('modal-btn-toggle-render');
+    const titleEl = document.getElementById('msg-modal-title');
+ 
+    if (modalIsRenderMode) {
+        renderEl.innerHTML = sanitizeChatHtml(currentModalRawContent);
+        // 让渲染视图中的图片也支持点击查看画廊
+        renderEl.querySelectorAll('img').forEach(img => {
+            img.style.cursor = 'pointer';
+            img.onclick = (e) => {
+                e.stopPropagation();
+                if (typeof openGallery === 'function') openGallery(img.src, true);
+            };
+        });
+        textEl.style.display = 'none';
+        renderEl.style.display = 'block';
+        toggleBtn.innerText = '切换查看代码';
+        titleEl.innerText = '消息内容 (HTML渲染模式)';
+    } else {
+        textEl.style.display = 'block';
+        renderEl.style.display = 'none';
+        toggleBtn.innerText = '切换渲染显示';
+        titleEl.innerText = '消息内容 (HTML源码模式)';
+    }
+}
+ 
+function copyModalHtmlAndClose() {
+    let text = currentModalRawContent;
+    let ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('✅ 已复制HTML全文!');
+    document.getElementById('msg-modal').style.display='none';
+}
+ 
+// 【新增】辅助函数：解析HTML并准确保留换行符
+function getHtmlText(html) {
+    let div = document.createElement('div');
+    div.innerHTML = sanitizeChatHtml(html);
+    div.querySelectorAll('br').forEach(el => el.replaceWith('\n'));
+    div.querySelectorAll('p, div, tr, li').forEach(el => {
+        el.after('\n');
+    });
+    return div.innerText || div.textContent;
+}
+
+function copyModalTextAndClose() {
+    let text = getHtmlText(currentModalRawContent); // 使用保留换行的提取方法
+    let ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('✅ 已复制文本内容!');
+    document.getElementById('msg-modal').style.display='none';
+}
+
+// 增量渲染方法
+function renderChat(data, isAppend = true) {
+  if (isAppend) {
+      // 【修改点 1】：严格拦截过滤：只渲染时间戳大于当前最后一条的消息，完美解决长轮询和发送并发导致的重复Bug
+      data = data.filter(msg => msg.Timestamp > lastMsgTime);
+  }
+  if (data.length === 0) return;
+
+  let body = document.getElementById('chat-body');
+  let isScrolledToBottom = body.scrollHeight - body.clientHeight <= body.scrollTop + 50;
+  
+  if (!isAppend) body.innerHTML = '';
+  
+  data.forEach(msg => {
+// 如果后端传了完整名字就用完整名字，否则退化兼容老版本只显示 ID
+    let displayName = msg.SenderName || msg.Sender;
+    lastMsgSender = msg.Sender;
+    if (msg.Sender && msg.Sender !== myIpId) chatMembers.add(msg.Sender);
+    
+    // 【修改点】：近期3个发言人中排除掉当前自身
+    if (msg.Sender && msg.Sender !== myIpId) {
+        recentSpeakers = recentSpeakers.filter(id => id !== msg.Sender);
+        recentSpeakers.unshift(msg.Sender);
+        if (recentSpeakers.length > 3) recentSpeakers.pop();
+    }
+    let wrapper = document.createElement('div');
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    let isMine = msg.Sender === myIpId;
+    wrapper.style.alignItems = isMine ? 'flex-end' : 'flex-start';
+    
+    let info = document.createElement('div');
+    info.style.cssText = 'font-size: 13px; color: #718096; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;';
+    
+    let textInfoSpan = document.createElement('span');
+    let targetInfo = msg.Target ? ` (To:${msg.Target})` : '';
+    textInfoSpan.innerText = isMine ? `我 ${msg.Time}${targetInfo}` : `ID:${displayName} ${msg.Time}${targetInfo}`;
+    info.appendChild(textInfoSpan);
+
+    // 按钮样式：下沉式，无边框线，背景柔和
+    const btnStyle = 'padding: 2px 6px; font-size: 11px; background: #edf2f7; color: #4a5568; border: none; border-radius: 4px; cursor: pointer; box-shadow: inset 0 1px 2px rgba(0,0,0,0.06); transition: background 0.2s, transform 0.1s;';
+    const noTextStyle = 'padding: 2px 6px; font-size: 11px; background: transparent; color: #cbd5e0; border: none; border-radius: 4px; cursor: default; user-select: none; transition: none;';
+
+    // 复制纯文本按钮
+    let btnCopy = document.createElement('button');
+    let msgText = getHtmlText(msg.Content); 
+    let hasText = msgText.length > 0;
+
+    if (hasText) {
+        btnCopy.innerText = '📋 复制文本';
+        btnCopy.style.cssText = btnStyle;
+        btnCopy.onmousedown = () => btnCopy.style.transform = 'translateY(1px)';
+        btnCopy.onmouseup = () => btnCopy.style.transform = 'translateY(0)';
+        btnCopy.onclick = (e) => {
+            e.stopPropagation();
+            let ta = document.createElement('textarea');
+            ta.value = msgText; // 使用保留换行的文本提取
+            ta.style.position = 'fixed'; ta.style.opacity = '0'; 
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+            showToast('✅ 已复制纯文本');
+        };
+    } else {
+        // 无文字内容（如图文等），修改为极简不可点击样式
+        btnCopy.innerText = '无文本';
+        btnCopy.style.cssText = noTextStyle;
+        btnCopy.onclick = (e) => { e.stopPropagation(); }; // 阻止冒泡且无任何反馈
+    }
+    
+    info.appendChild(btnCopy);
+
+    let bubble = document.createElement('div');
+    bubble.className = 'chat-bubble ' + (isMine ? 'mine' : 'other');
+    bubble.innerHTML = sanitizeChatHtml(msg.Content);
+    bubble.style.position = 'relative'; // 开启相对定位以便容纳右侧竖条
+
+    // “查看原HTML”右侧 30px 宽度的可点击竖条 将 height: 100% 改为 top: 0; bottom: 0; 解决绝对定位随内容高度坍塌问题
+    let overlayStrip = document.createElement('div');
+    overlayStrip.title = '点击查看原HTML/渲染内容';
+    overlayStrip.style.cssText = `position: absolute; right: 0; top: 0; bottom: 0; width: 30px; cursor: pointer; background: transparent; transition: background 0.2s; border-top-right-radius: 12px; border-bottom-right-radius: ${isMine ? '2px' : '12px'}; border-top-left-radius: 0; border-bottom-left-radius: 0;`;
+    overlayStrip.onmouseover = () => overlayStrip.style.background = 'rgba(0,0,0,0.06)';
+    overlayStrip.onmouseout = () => overlayStrip.style.background = 'transparent';
+    overlayStrip.onclick = (e) => {
+        e.stopPropagation();
+        openModalWithContent(msg.Content); // 调用全局统一弹窗函数
+    };
+    bubble.appendChild(overlayStrip);
+
+
+    // 【修改点2】：单条消息高度限制：超过600px自动折叠显示500px，底部加上可点击的“已被折叠”提醒（等同于查看原HTML）
+    // 先将 bubble 临时加入 DOM 树以准确测量真实高度
+    body.appendChild(wrapper);
+    wrapper.appendChild(info);
+    wrapper.appendChild(bubble);
+    
+    // 强制渲染计算高度
+    let measuredHeight = bubble.offsetHeight;
+    if (measuredHeight > 600) {
+        bubble.style.maxHeight = '500px';
+        bubble.style.overflow = 'hidden';
+        bubble.style.position = 'relative';
+
+        let foldTip = document.createElement('div');
+        foldTip.innerText = '已被折叠 (点击查看原HTML/完整内容)';
+        foldTip.style.cssText = 'position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(240,240,240,0.95) 70%); text-align: center; padding: 25px 0 10px 0; font-size: 12px; color: #3182ce; font-weight: bold; cursor: pointer; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; z-index: 2;';
+        // 【修改】点击折叠提示时直接调用统一弹窗函数
+        foldTip.onclick = (e) => {
+            e.stopPropagation();
+            openModalWithContent(msg.Content);
+        };
+        bubble.appendChild(foldTip);
+    }
+
+    bubble.querySelectorAll('img').forEach(img => {
+        img.style.cursor = 'pointer'; 
+        img.onclick = (e) => {
+            e.stopPropagation();
+            if (typeof openGallery === 'function') openGallery(img.src, true);
+        };
+    });
+  });
+  
+  if (typeof renderMembers === 'function') renderMembers();
+
+  if (data.length > 0) {
+      let lastMsg = data[data.length - 1];
+      lastMsgTime = lastMsg.Timestamp;
+      // 【修复】：实时计算末条消息是否包含文本
+      lastMsgHasText = getHtmlText(lastMsg.Content).length > 0;
+      
+      let bubbleEl = document.getElementById('new-msg-bubble');
+      let countEl = document.getElementById('new-msg-count');
+
+      if (isScrolledToBottom || !isAppend) {
+          body.scrollTop = body.scrollHeight;
+          if (bubbleEl) bubbleEl.style.display = 'none';
+          pendingNewMsgs = 0;
+
+          // 【新增】：在消息量少（无滚动条）或自动滚动到底部时，正确触发“复制末条”按钮的显示判定
+          let btnCopyLast = document.getElementById('btn-copy-last');
+          if (btnCopyLast) {
+              if (lastMsgSender && lastMsgSender !== myIpId && lastMsgHasText) {
+                  btnCopyLast.style.display = 'block';
+              } else {
+                  btnCopyLast.style.display = 'none';
+              }
+          }
+      } else {
+          pendingNewMsgs += data.length;
+          if (countEl) countEl.innerText = pendingNewMsgs;
+          if (bubbleEl) bubbleEl.style.display = 'block';
+      }
+  }
+updateRecentTargetsUI();
+}
+
+async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const target = document.getElementById('chat-target').value;
+    
+    if (input.querySelector('img[title="正在上传图片..."]')) {
+        showToast('⏳ 请等待图片上传完成后再发送');
+        return;
+    }
+
+    const content = input.innerHTML;
+    const textContent = input.innerText;
+    const hasImg = input.querySelector('img') !== null;
+    
+    if(!textContent && !hasImg) return;
+    
+    input.innerHTML = '';
+    try {
+        // 请求同时附上当前最后的拉取时间，顺带把发送的与其他人发送的差异更新拉取回来
+        const res = await fetch(`${SERVER_URL}chat/send?a=${encodeURIComponent(target)}&last=${lastMsgTime}&c=0`, {
+            method: 'POST',
+            body: content
+        });
+        const newData = await res.json();
+        if (newData && newData.length > 0) {
+            renderChat(newData, true); 
+            scrollToChatBottom(); // 只要是自己发了消息，强制锁定并滚动到底部
+        }
+    } catch(e) { showToast('发送失败'); }
+}
+
+// 统一封装或修改打开弹窗赋初值的逻辑（确保每次打开默认为渲染模式）：
+function openModalWithContent(rawContent) {
+    currentModalRawContent = rawContent;
+    modalIsRenderMode = true; // 默认渲染显示作为初始状态
+    
+    let modal = document.getElementById('msg-modal');
+    let textEl = document.getElementById('msg-modal-text');
+    let renderEl = document.getElementById('msg-modal-render-view');
+    let toggleBtn = document.getElementById('modal-btn-toggle-render');
+    let titleEl = document.getElementById('msg-modal-title');
+
+    renderEl.innerHTML = sanitizeChatHtml(currentModalRawContent);
+    renderEl.querySelectorAll('img').forEach(img => {
+        img.style.cursor = 'pointer';
+        img.onclick = (e) => {
+            e.stopPropagation();
+            if (typeof openGallery === 'function') openGallery(img.src, true);
+        };
+    });
+
+    textEl.style.display = 'none';
+    renderEl.style.display = 'block';
+    toggleBtn.innerText = '切换查看代码';
+    titleEl.innerText = '消息内容 (HTML渲染模式)';
+
+    textEl.value = rawContent;
+    modal.style.display = 'flex';
+}
+
+
+        /* 聊天相关的 JS 逻辑块 */
+
+function setTarget(id) {
+    let t = document.getElementById('chat-target');
+    t.value = t.value ? t.value + ',' + id : id;
+}
+
+let header = document.getElementById('chat-header');
+let chatWin = document.getElementById('chat-window');
+let isDragChat = false, cOffX = 0, cOffY = 0;
+header.addEventListener('mousedown', e => { if(e.target.tagName==='SPAN')return; isDragChat = true; cOffX = chatWin.offsetLeft - e.clientX; cOffY = chatWin.offsetTop - e.clientY; });
+document.addEventListener('mousemove', e => { if(isDragChat) { chatWin.style.left = (e.clientX + cOffX) + 'px'; chatWin.style.top = (e.clientY + cOffY) + 'px'; } });
+document.addEventListener('mouseup', () => { isDragChat = false; });
+
+const track = document.getElementById('lb-track');
+track.addEventListener('touchstart', e => {
+  if (e.touches.length > 1) return;
+  if (isAnimating) { clearTimeout(animTimer); isAnimating = false; }
+  isDragging = true;
+  startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+  track.style.transition = 'none';
+});
+track.addEventListener('touchmove', e => {
+  if (!isDragging) return;
+  const diffX = e.touches[0].clientX - startX;
+  const diffY = e.touches[0].clientY - startY;
+  if (Math.abs(diffX) > Math.abs(diffY)) {
+    track.style.transform = `translateX(calc(-100vw + ${diffX}px))`;
+  } else if (diffY > 0) {
+    track.style.transform = `translateX(-100vw) translateY(${diffY}px)`;
+  }
+});
+track.addEventListener('touchend', e => {
+  if (!isDragging) return; isDragging = false;
+  const diffX = e.changedTouches[0].clientX - startX;
+  const diffY = e.changedTouches[0].clientY - startY;
+  if (diffY > 80 && Math.abs(diffX) < 100) {
+    closeGallery(e, true); return;
+  }
+  if (Math.abs(diffX) < 8 && Math.abs(diffY) < 8) {
+    const now = Date.now();
+    if (now - lastTapTime < 300) { closeGallery(e, true); return; }
+    lastTapTime = now;
+    if (e.target.id === 'lightbox' || e.target.classList.contains('lb-slide')) {
+      closeGallery(e, true); return;
+    }
+    return;
+  }
+  const threshold = window.innerWidth / 4;
+  if (diffX > threshold) changeImg(-1);
+  else if (diffX < -threshold) changeImg(1);
+  else {
+    isAnimating = true;
+    animTimer = setTimeout(() => { isAnimating = false; }, 350);
+    track.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
+    track.style.transform = 'translateX(-100vw)';
+    track.addEventListener('transitionend', function handler() {
+      track.removeEventListener('transitionend', handler);
+      clearTimeout(animTimer); isAnimating = false;
+    });
+  }
+});
+track.addEventListener('touchcancel', () => {
+  isDragging = false; isAnimating = false;
+  if(animTimer) clearTimeout(animTimer);
+});
+
+document.addEventListener('keydown', e => {
+  if(document.getElementById('lightbox').style.display === 'block') {
+    if(e.key === 'ArrowRight') changeImg(1);
+    if(e.key === 'ArrowLeft') changeImg(-1);
+    if(e.key === 'Escape') closeGallery(e, true);
+  }
+});
+
+fetch(SERVER_URL + 'truststatus').then(r=>r.text()).then(res=>{
+  if(res === 'true') {
+     document.querySelectorAll('button:disabled').forEach(btn => {
+         btn.disabled = false;
+         btn.style.cursor = 'pointer';
+         btn.style.backgroundColor = btn.classList.contains('btn-upload') ? '#ed8936' : (btn.classList.contains('btn-download') ? '#48bb78' : '#4299e1');
+         if (btn.title.includes('限制') || btn.title.includes('权限')) btn.title = '信任IP特权：已绕过限制';
+     });
+     document.querySelectorAll('input[type="checkbox"]:disabled:not([title*="文件夹"])').forEach(cb => cb.disabled = false);
+     document.querySelectorAll('.trust-hidden').forEach(el => el.style.display = '');
+  }
+}).catch(()=>{});
+</script>
+</body>
+</html>
