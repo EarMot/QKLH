@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.Windows.Forms;
-
+//增加断点续传和网络管道破裂（Broken pipe）导致异常处理
 #nullable enable 
 #pragma warning disable CS4014 // 屏蔽异步未 await 警告 兼容V1
 #pragma warning disable CS8602 // 屏蔽解引用可能为空的引用警告
@@ -48,13 +48,9 @@ public static void Exec(Quicker.Public.IStepContext context)
     
     bool IsInline = context.GetVarValue("开启浏览") != null ? Convert.ToBoolean(context.GetVarValue("开启浏览")) : true;
     string defaultUploadDir = context.GetVarValue("上传目录") as string ?? Path.GetTempPath();
+    string filterFile = context.GetVarValue("筛选") as string ?? "";
 
-    if (palb == null)
-    {
-        Console.WriteLine("警告：未能获取到有效的 path_列表");
-        context.SetVarValue("pa_url_词典", Purlcd);
-        return;
-    }
+    //if (palb == null)    {  Console.WriteLine("警告：未能获取到有效的 path_列表");   context.SetVarValue("pa_url_词典", Purlcd);    return;  }
 
     var server = LocalImageServer.Instance;
     
@@ -89,6 +85,7 @@ public static void Exec(Quicker.Public.IStepContext context)
         server.RegisterAlias(server.CustomAlias, port_Str);
     }
 
+    if(filterFile !="old"){
     // ====== 前后端分离：C# 仅负责初始化文件映射模型 ======
     foreach (string kpa in palb)
     {
@@ -101,7 +98,7 @@ public static void Exec(Quicker.Public.IStepContext context)
         }
         catch { }
     }
-
+    }
     
     // ====== 前后端分离：C# 获取文本源码作为虚拟网页 ======
     // 获取 Quicker 中的文本源码
@@ -130,6 +127,7 @@ public static void Exec(Quicker.Public.IStepContext context)
     {
         if(File.Exists(kvp.Key) || Directory.Exists(kvp.Key)) 
         {
+            if(filterFile =="fresh" && palb.Contains(kvp.Key)==false && Directory.Exists(kvp.Key) ){ continue;}
             Purlcd[kvp.Key] = kvp.Value.Url;
         }
     }
@@ -766,9 +764,54 @@ if (_memoryFiles.TryGetValue(token, out byte[]? memBytes))
         else if (!string.IsNullOrEmpty(qInline)) bool.TryParse(qInline, out useInline);
         string dispositionType = useInline ? "inline" : "attachment";
         response.AddHeader("Content-Disposition", $"{dispositionType}; filename*=UTF-8''{Uri.EscapeDataString(fileName)}");
-        response.ContentLength64 = memBytes.Length;
-        response.OutputStream.Write(memBytes, 0, memBytes.Length);
-        return;
+        
+        // ====== 【新增：内存文件的断点续传支持】 ======
+        response.AddHeader("Accept-Ranges", "bytes"); 
+        
+        long fileLength = memBytes.Length;
+        long startByte = 0;
+        long endByte = fileLength - 1;
+        bool isPartial = false;
+
+        string rangeHeader = request.Headers["Range"];
+        if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes="))
+        {
+            string[] range = rangeHeader.Substring(6).Split('-');
+            if (range.Length >= 1 && long.TryParse(range[0], out long start)) startByte = start;
+            if (range.Length >= 2 && long.TryParse(range[1], out long end)) endByte = end;
+            isPartial = true;
+        }
+
+        if (startByte > endByte || startByte >= fileLength)
+        {
+            response.StatusCode = (int)HttpStatusCode.RequestedRangeNotSatisfiable;
+            response.AddHeader("Content-Range", $"bytes */{fileLength}");
+            return;
+        }
+
+        if (isPartial)
+        {
+            response.StatusCode = (int)HttpStatusCode.PartialContent;
+            response.AddHeader("Content-Range", $"bytes {startByte}-{endByte}/{fileLength}");
+        }
+        else
+        {
+            response.StatusCode = (int)HttpStatusCode.OK;
+        }
+
+        // ====== 【修改后】：内存文件传输（增加断连捕获与异步写入） ======
+long contentLength = endByte - startByte + 1;
+response.ContentLength64 = contentLength;
+
+try
+{
+    // 使用 WriteAsync 代替 Write，捕获客户端中途断开
+    await response.OutputStream.WriteAsync(memBytes, (int)startByte, (int)contentLength);
+}
+catch (HttpListenerException) { /* 客户端主动断开连接，忽略即可 */ }
+catch (IOException) { /* 管道破裂 Broken Pipe，忽略即可 */ }
+catch (Exception) { /* 其他未知传输异常 */ }
+return;
     } catch { }
 }
 else if (_tokenToPathMap.TryGetValue(token, out string? imagePath) && imagePath != null && File.Exists(imagePath))
@@ -804,18 +847,88 @@ else if (_tokenToPathMap.TryGetValue(token, out string? imagePath) && imagePath 
         response.ContentType = GetMimeType(imagePath);
         response.AddHeader("Content-Disposition", $"{dispositionType}; filename*=UTF-8''{Uri.EscapeDataString(fileName)}");
 
-        // 写入文件流
-        using (var fs = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        // ====== 【新增：支持视频/音频的断点续传 (Range 请求)】 ======
+        response.AddHeader("Accept-Ranges", "bytes"); // 声明支持断点续传
+
+        long fileLength = new FileInfo(imagePath).Length;
+        long startByte = 0;
+        long endByte = fileLength - 1;
+        bool isPartial = false;
+
+        // 解析浏览器传来的 Range 请求头
+        string rangeHeader = request.Headers["Range"];
+        if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes="))
         {
-            response.ContentLength64 = fs.Length;
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
-            {
-                response.OutputStream.Write(buffer, 0, read);
-            }
+            string[] range = rangeHeader.Substring(6).Split('-');
+            if (range.Length >= 1 && long.TryParse(range[0], out long start)) startByte = start;
+            if (range.Length >= 2 && long.TryParse(range[1], out long end)) endByte = end;
+            isPartial = true;
         }
-        return;
+
+        // 处理超出范围的请求
+        if (startByte > endByte || startByte >= fileLength)
+        {
+            response.StatusCode = (int)HttpStatusCode.RequestedRangeNotSatisfiable; // 416
+            response.AddHeader("Content-Range", $"bytes */{fileLength}");
+            return;
+        }
+
+        // 根据是否为部分请求设置不同的状态码和响应头
+        if (isPartial)
+        {
+            response.StatusCode = (int)HttpStatusCode.PartialContent; // 206
+            response.AddHeader("Content-Range", $"bytes {startByte}-{endByte}/{fileLength}");
+        }
+        else
+        {
+            response.StatusCode = (int)HttpStatusCode.OK; // 200
+        }
+
+        // ====== 【修改后】：磁盘文件传输（改用异步+断连精准 break 释放线程） ======
+long contentLength = endByte - startByte + 1;
+response.ContentLength64 = contentLength;
+
+// 1. 使用 FileShare.ReadWrite 防止文件被占用时读取失败
+using (var fs = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+{
+    if (startByte > 0) fs.Seek(startByte, SeekOrigin.Begin);
+    
+    byte[] buffer = new byte[64 * 1024]; // 64KB 缓冲区
+    long bytesRemaining = contentLength;
+    
+    while (bytesRemaining > 0)
+    {
+        int bytesToRead = (int)Math.Min(buffer.Length, bytesRemaining);
+        int read = await fs.ReadAsync(buffer, 0, bytesToRead);
+        if (read == 0) break;
+        
+        try
+        {
+            // 2. 异步写入客户端
+            await response.OutputStream.WriteAsync(buffer, 0, read);
+            await response.OutputStream.FlushAsync();
+        }
+        catch (HttpListenerException)
+        {
+            // 3. 【核心修复】：客户端（浏览器切歌/拖进度条）强行掐断了连接
+            // 此时必须立即 break 跳出循环，结束当前 HTTP 请求处理线程
+            break; 
+        }
+        catch (IOException)
+        {
+            // 客户端连接重置 / Broken Pipe
+            break;
+        }
+        catch (ObjectDisposedException)
+        {
+            // OutputStream 已被关闭
+            break;
+        }
+        
+        bytesRemaining -= read;
+    }
+}
+return;
     }
     catch { /* 异常处理 */ }
 }
@@ -1096,16 +1209,20 @@ public void UpdateEmojis(List<string>? list)
     }
     
     private void SendError(HttpListenerResponse response, HttpStatusCode statusCode, string message)
+{
+    try
     {
-        try
-        {
-            response.StatusCode = (int)statusCode;
-            byte[] buffer = Encoding.UTF8.GetBytes(message);
-            response.ContentLength64 = buffer.Length;
-            response.OutputStream.Write(buffer, 0, buffer.Length);
-        }
-        catch { }
+        response.StatusCode = (int)statusCode;
+        byte[] buffer = Encoding.UTF8.GetBytes(message);
+        response.ContentLength64 = buffer.Length;
+        // 使用 try-catch 保护错误信息的写入
+        response.OutputStream.Write(buffer, 0, buffer.Length);
     }
+    catch 
+    { 
+        // 客户端已断开时，忽略发送失败
+    }
+}
     
     private string GetMimeType(string path)
     {
@@ -1113,8 +1230,13 @@ public void UpdateEmojis(List<string>? list)
         string extension = Path.GetExtension(path).ToLowerInvariant();
         return extension switch
         {
+            // 图片
             ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".gif" => "image/gif",
             ".bmp" => "image/bmp", ".svg" => "image/svg+xml", ".webp" => "image/webp",
+            // 视频和音频 (新增)
+            ".mp4" => "video/mp4", ".webm" => "video/webm", ".ogg" => "video/ogg",
+            ".mp3" => "audio/mpeg", ".wav" => "audio/wav", ".m4a" => "audio/mp4", ".flac" => "audio/flac",
+            // 文档与其他
             ".pdf" => "application/pdf", ".txt" => "text/plain", ".html" or ".htm" => "text/html",
             ".json" => "application/json", ".xml" => "application/xml", ".zip" => "application/zip",
             ".rar" => "application/x-rar-compressed", _ => "application/octet-stream"
