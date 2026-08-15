@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <link rel="icon" href="https://files.getquicker.net/_userFiles/59771/avata_20221106024131.jpg" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>局域网文件共享门户</title>
+    <title>局域网共享门户</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f5f7; margin: 0; padding: 20px; color: #333; }
         .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
@@ -77,6 +77,31 @@
         #chat-input::-webkit-scrollbar-track { background: transparent; cursor: default; }
         #chat-input::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 4px; cursor: default; }
         #chat-input::-webkit-scrollbar-thumb:hover { background: #a0aec0; cursor: default; }
+
+        /* ---------------- 新增：编辑框粘贴内容 CSS 沙盒隔离 ---------------- */
+        /* 1. 为输入框建立安全的定位边界，并强制裁剪水平超宽的不可见内容 */
+        #chat-input {
+            position: relative;
+            overflow-x: hidden !important; 
+        }
+        
+        /* 2. 核心魔法：纯视觉层面洗脱外来危险属性，不修改真实 innerHTML 数据 */
+        #chat-input * {
+            max-width: 100% !important;       /* 强制限制最大宽度，将其“压”在编辑框尺寸下 */
+            height: auto !important;          /* 解除外来固定高度带来的溢出 */
+            min-height: auto !important;      
+            position: static !important;      /* 核心：剥夺 absolute/fixed 定位，彻底解决“飞出框外”和“发送后残留”问题 */
+            box-sizing: border-box !important;
+            transform: none !important;       /* 禁用偏移 */
+        }
+        
+        /* 3. 针对粘贴的大图片或视频，限制为合理的缩略图大小以方便继续输入文字 */
+        #chat-input img, #chat-input video, #chat-input svg, #chat-input canvas {
+            max-width: 100% !important;
+            max-height: 120px !important; 
+            object-fit: contain !important;
+            display: inline-block !important;
+        }
 
         /* ---------------- 新增：拖拽提示遮罩UI (防抖优化版) ---------------- */
         
@@ -167,6 +192,95 @@
             opacity: 0.7;
         }
 
+/* 新增：画廊多媒体及歌词相关样式 */
+.lb-media-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+.lb-video { max-width: 90vw; max-height: 85vh; outline: none; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.lb-audio { margin-top: 0; width: 100%; max-width: 500px; max-height: 60px; outline: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 30px; }
+/* 音乐封面样式增强 */
+.lb-flac-cover {
+    width: 480px;
+    height: 480px; 
+    aspect-ratio: 1 / 1; /* 现代浏览器原生支持 1:1 正方形比例 */
+
+    /* 等比缩放并居中裁切填充 */
+    object-fit: cover;
+    object-position: center;
+
+    /* 辅助样式：确保块级居中与防溢出 */
+    display: block;
+    margin: 0 auto;
+    border-radius: 12px; /* 可选：圆角效果 */
+    
+    /*  淡入过渡让图片切换更柔和（配合 JS 切换使用） */
+    transition: opacity 0.3s ease-in-out;
+}
+.lyrics-container { 
+    position: relative; /* 修改：移除绝对定位，改为相对定位跟随播放器，并调整间距 */
+    margin-top: 20px; 
+    width: 150%; 
+    text-align: center; 
+    color: #ffeb3b; 
+    font-size: 20px; 
+    font-weight: bold; 
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
+    pointer-events: none; 
+    z-index: 10015; 
+    transition: all 0.3s ease; 
+    min-height: 50px;
+    max-height: 50px;
+}
+
+/* 修改截屏按钮样式，固定在右下角，不遮挡原生进度条 */
+.btn-capture { position: absolute; right: 20px; bottom: 70px; background: rgba(0, 0, 0, 0.6); color: white; border: 1px solid rgba(255,255,255,0.4); padding: 6px 12px; border-radius: 6px; cursor: pointer; z-index: 10015;  font-size: 13px; transition: background 0.2s; }
+.btn-capture:hover { background: rgba(0, 0, 0, 0.9); }
+/* 画廊处于媒体模式时，通过JS添加此类来隐藏旋转按钮 */
+.hide-for-media { display: none !important; }
+
+
+/* 新增/重构画廊面板与控制按钮样式 */
+.lb-controls-panel {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 10015;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.lb-ctrl-btn {
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.lb-ctrl-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+}
+
+/* 循环模式激活状态 */
+.lb-ctrl-btn.active {
+    background: rgba(66, 153, 225, 0.85) !important;
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, 0.7) !important;
+    box-shadow: 0 2px 8px rgba(66, 153, 225, 0.4);
+}
+
+/* 调整截取当前帧按钮的相对位置 */
+.btn-capture {
+    position: static !important; /* 放入 flex 容器统一排列 */
+    margin-top: 4px;
+}
+
+
+
     </style>
 </head>
 <body>
@@ -174,14 +288,43 @@
 <div id="lightbox" class="lightbox">
   <span class="lb-counter" id="lb-counter" onclick="handleMobileCounterClick(event)">1 / 1</span>
   <button class="lb-close-btn" onclick="closeGallery(event, true)" title="关闭 (Esc)">✕</button>
-  <button class="lb-rotate-btn" onclick="toggleRotate(event)" title="旋转 90°">🔄</button>
-  <div class="lb-btn lb-prev" onclick="changeImg(-1, event)">&#10094;</div>
+  <!-- 旋转按钮：仅在图片模式下显示 -->
+  <button id="lb-rotate-btn" class="lb-rotate-btn" onclick="toggleRotate(event)" title="旋转 90°">🔄</button>
+  
+  <!-- 左右切换按钮 -->
+  <div class="lb-btn lb-prev" onclick="navigateGallery(-1, event)">&#10094;</div>
+  <div class="lb-btn lb-next" onclick="navigateGallery(1, event)">&#10095;</div>
+
+  <!-- 图片轨道容器 -->
   <div class="lb-track" id="lb-track">
     <div class="lb-slide"><img id="lb-img-prev" class="lb-img"></div>
     <div class="lb-slide"><img id="lb-img-curr" class="lb-img"></div>
     <div class="lb-slide"><img id="lb-img-next" class="lb-img"></div>
   </div>
-  <div class="lb-btn lb-next" onclick="changeImg(1, event)">&#10095;</div>
+
+  <!-- 媒体音视频容器 -->
+  <div id="lb-media-box" class="lb-media-container" style="display:none;">
+    <!-- 新增：音频专属的居中包裹容器，用于垂直排列标题、封面、播放器和歌词 -->
+    <div id="lb-audio-wrapper" style="display:none; flex-direction:column; align-items:center; width:100%; max-width:600px; padding: 20px;">
+        <img id="lb-media-cover" class="lb-flac-cover" style="display:none;" />
+        <!-- 新增：控制栏上方的标题与艺术家显示 -->
+        <div id="lb-audio-title" style="color:white; font-size:18px; margin-bottom:15px; font-weight:bold; text-shadow: 1px 1px 4px rgba(0,0,0,0.8); text-align:center; word-break: break-all; letter-spacing: 1px;"></div>
+        
+        <audio id="lb-audio" class="lb-audio" controls style="display:none;"></audio>
+        
+        <!-- 调整位置：放入容器内，紧跟在 audio 下方 -->
+        <div id="lb-lyrics" class="lyrics-container" style="display:none;"></div>
+    </div>
+    
+    <video id="lb-video" class="lb-video" controls style="display:none;"></video>
+  </div>
+
+  <!-- 媒体画廊专属操作面板（位于截取当前帧按钮上方） -->
+  <div id="lb-media-controls" class="lb-controls-panel" style="display:none;">
+    <button id="btn-loop-list" class="lb-ctrl-btn active" onclick="toggleLoopMode('list', event)">🔁 列表循环</button>
+    <button id="btn-loop-single" class="lb-ctrl-btn" onclick="toggleLoopMode('single', event)">🔂 单曲循环</button>
+    <button id="btn-capture" class="btn-capture" style="display:none;" onclick="handleCaptureClick(event)">📸 截取当前帧并保存</button>
+  </div>
 </div>
 
 <!-- 修改点3：查看原HTML弹窗策略：默认大尺寸、点击空白位置关闭、变更为4个按钮、支持切换渲染/代码模式 -->
@@ -302,7 +445,9 @@
         <button onclick="invertSelection()">反选</button>
         <button class="btn-upload" onclick="triggerUpload('default', '默认目录', this)">📤 上传文件</button>
         <button class="btn-download" onclick="batchDownload()">📦 批量下载</button>
+        
     </div>
+    
 
     <table>
         <thead>
@@ -324,6 +469,12 @@
 </div>
 
 <script>
+
+// ================= 新增：音频全局缓存 =================
+const globalMediaCache = {}; // 结构: { [url]: { coverUrl, artist, title } }
+const defaultMusicIcon = "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100%25' height='100%25' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' font-size='40' text-anchor='middle' dy='.3em'%3E%F0%9F%8E%B5%3C/text%3E%3C/svg%3E";
+// ================= 新增：音频多封面轮播定时器控制 =================
+let coverCycleTimer = null;
 
 // === 拖拽事件防抖定时器 ===
     let chatInputDragTimer;
@@ -770,16 +921,37 @@ function createRow(file, isDir, isChild = false) {
         let fileIcon = '📄';
         if (['zip', 'rar', '7z', 'tar', 'gz', 'iso'].includes(ext)) fileIcon = '📦';
         else if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) fileIcon = '🎬';
-        else if (['mp3', 'wav', 'flac', 'aac'].includes(ext)) fileIcon = '🎵';
+        else if (['mp3', 'wav', 'flac', 'aac', 'ape', 'tak'].includes(ext)) fileIcon = '🎵';
         else if (['doc', 'docx'].includes(ext)) fileIcon = '📝';
         else if (['xls', 'xlsx', 'csv'].includes(ext)) fileIcon = '📊';
         else if (['ppt', 'pptx'].includes(ext)) fileIcon = '📊';
         else if (['code', 'js', 'css', 'cs', 'py', 'xml', 'log', 'md'].includes(ext)) fileIcon = '💻';
 
+        // 修改：增加媒体文件支持，并将文件名及上传 token 传给画廊以便同目录保存截图// 【完全还原】普通图片走原有画廊逻辑（传入 false 保证多图切换正常）
         if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
-            // 【修改点4】：传入 false 代表这是文件列表的图
             previewHtml = `<a href="javascript:void(0)" class="gallery-link" onclick="openGallery('${file.url}', false)"><img src="${file.url}" class="preview"></a>`;
+        } 
+        // 多媒体音视频走专属媒体画廊，列表预览图使用标准 preview 样式尺寸，留白对齐其它图标
+        else if (['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'aac'].includes(ext)) {
+            const tokenStr = typeof uploadToken !== 'undefined' && uploadToken ? `'${uploadToken}'` : 'null';
+            const isVideo = ['mp4', 'webm', 'ogg'].includes(ext);
+            // 默认SVG底图（与现有界面风格一致的微型占位）
+            const iconSvg = isVideo 
+                ? "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100%25' height='100%25' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' font-size='40' text-anchor='middle' dy='.3em'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" 
+                : defaultMusicIcon;
+            
+            const thumbId = 'thumb_' + Math.random().toString(36).substr(2,9);
+            // 这里使用了你系统原有的 class="preview"，尺寸、留白将自动与其他图片/文件对齐，不再突兀
+            previewHtml = `<a href="javascript:void(0)" class="gallery-link" onclick="openMediaGallery('${file.url}', '${ext}', '${safeNameAttr}', ${tokenStr})">
+                <img id="${thumbId}" class="preview" style="object-fit:cover;" src="${iconSvg}">
+            </a>`;
+            
+            // 延时异步替换为真实视频帧或FLAC封面，避免阻塞页面渲染
+            if (isVideo || ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ape'].includes(ext)) {
+                setTimeout(() => lazyGenerateMediaThumb(file.url, ext, thumbId, safeName), 300);
+            }
         } else {
+            // ... 维持原有其他类型文件的逻辑
             const inlineUrl = `${file.url}?inline=true`;
             const extText = ext ? ext.toUpperCase() : 'FILE';
             previewHtml = `<a href="${inlineUrl}" target="_blank" class="file-icon-link" title="点击在网页预览 (${safeName})" style="display:inline-flex; align-items:center; gap:1px; text-decoration:none;"><span style="font-size:25px;">${fileIcon}</span><span style="font-size:8px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:0px 1px; border-radius:1px;">${extText}</span></a>`;
@@ -807,53 +979,106 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i]; 
 }
 
-function showToast(text, duration = 4000) {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  const toast = document.createElement('div');
-  toast.className = 'toast-msg'; toast.innerText = text;
-  toast.onclick = () => closeToast(toast);
-  container.appendChild(toast);
-  setTimeout(() => closeToast(toast), duration);
+function showToast(msg, duration = 2200) {
+    if (!msg) return;
+
+    let toast = document.getElementById('global-toast-box');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'global-toast-box';
+        document.body.appendChild(toast); // 确保挂载在 body 顶层，不受父级层级限制
+    }
+
+    // 强行写入最高 z-index 与固定定位样式
+    toast.style.cssText = `
+        position: fixed !important;
+        top: 30px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        background: rgba(0, 0, 0, 0.88) !important;
+        color: #ffffff !important;
+        padding: 10px 22px !important;
+        border-radius: 8px !important;
+        font-size: 14px !important;
+        line-height: 1.5 !important;
+        z-index: 30000 !important; /* 远高于画廊的 10015 */
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        pointer-events: none !important;
+        transition: opacity 0.25s ease, transform 0.25s ease !important;
+        white-space: pre-wrap !important;
+        word-break: break-all !important;
+        max-width: 85vw !important;
+        text-align: center !important;
+    `;
+
+    toast.innerText = msg;
+    toast.style.opacity = '1';
+    toast.style.display = 'block';
+
+    if (toast.timer) clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => { 
+            toast.style.display = 'none'; 
+        }, 250);
+    }, duration);
 }
 
-function showInlineTip(e, text) {
-    if (!window.matchMedia('(pointer: coarse)').matches) return;
-    e.stopPropagation();
-    const existing = document.getElementById('inline-tip-popup');
-    if (existing) existing.remove();
-    
-    const target = e.currentTarget;
-    const rect = target.getBoundingClientRect();
-    const tip = document.createElement('div');
-    tip.id = 'inline-tip-popup';
+function showInlineTip(targetEl, text) {
+    if (!targetEl || !text) return;
+
+    let tip = document.getElementById('global-inline-tip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'global-inline-tip';
+        document.body.appendChild(tip);
+    }
+
+    const rect = targetEl.getBoundingClientRect();
+    const topPos = rect.bottom + 8;
+    const leftPos = Math.max(12, Math.min(rect.left, window.innerWidth - 300));
+
+    tip.style.cssText = `
+        position: fixed !important;
+        top: ${topPos}px !important;
+        left: ${leftPos}px !important;
+        background: rgba(20, 20, 20, 0.92) !important;
+        color: #ffffff !important;
+        padding: 8px 14px !important;
+        border-radius: 6px !important;
+        font-size: 16px !important;
+        line-height: 1.4 !important;
+        z-index: 30000 !important; /* 置顶显示 */
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.25) !important;
+        pointer-events: none !important;
+        word-break: break-all !important;
+        max-width: 80vw !important;
+        transition: opacity 0.2s ease !important;
+    `;
+
     tip.innerText = text;
-    tip.style.cssText = `position: fixed; z-index: 10006; background: rgba(30, 30, 30, 0.95); color: white; padding: 8px 14px; border-radius: 8px; font-size: 13px; word-break: break-all; max-width: min(600px, 90vw); box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: toastFadeIn 0.2s forwards;`;
-    document.body.appendChild(tip);
-    let top = rect.bottom + 6;
-    let left = rect.left + (rect.width / 2) - (tip.offsetWidth / 2);
-    if (left < 10) left = 10;
-    if (left + tip.offsetWidth > window.innerWidth - 10) left = window.innerWidth - tip.offsetWidth - 10;
-    if (top + tip.offsetHeight > window.innerHeight - 10) top = rect.top - tip.offsetHeight - 6;
-    tip.style.top = top + 'px';
-    tip.style.left = left + 'px';
-    const removeTip = () => {
-        if (tip.parentNode) {
-            tip.style.animation = 'toastFadeOut 0.2s forwards';
-            setTimeout(() => tip.remove(), 200);
-        }
-        document.removeEventListener('click', removeTip);
-    };
-    setTimeout(removeTip, 3000);
-    setTimeout(() => document.addEventListener('click', removeTip), 10);
+    tip.style.opacity = '1';
+    tip.style.display = 'block';
+
+    if (tip.timer) clearTimeout(tip.timer);
+    tip.timer = setTimeout(() => {
+        tip.style.opacity = '0';
+        setTimeout(() => { 
+            tip.style.display = 'none'; 
+        }, 200);
+    }, 2500);
 }
 
 function handleMobileClick(e, text) { showInlineTip(e, text); }
 function handleMobileCounterClick(e) {
-    if (!window.matchMedia('(pointer: coarse)').matches) return;
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     const counterEl = document.getElementById('lb-counter');
-    if (counterEl && counterEl.title) showInlineTip(e, counterEl.title);
+    if (!counterEl) return;
+    const fullFileName = counterEl.getAttribute('title') || '';
+    if (!fullFileName) return;
+    showInlineTip(counterEl, fullFileName);
 }
 
 function closeToast(toast) {
@@ -1303,17 +1528,22 @@ function disableAllActions() {
   
     const tb = document.getElementById('timer-box');
     if (tb) {
-        // 在“服务已关闭”旁增加“手动重连”按钮
         tb.innerHTML = '⛔ 服务已关闭 <span onclick="reconnectServer()" style="color:#4299e1; cursor:pointer; text-decoration:underline; font-size:13px; margin-left:12px; transition: color 0.2s;">🔄 手动重连</span>';
         tb.style.color = '#e53e3e'; 
         tb.style.fontWeight = 'bold';
     }
   
-    // 遍历所有 button：用 dataset 记住被关闭前是“启用”状态的按钮
+    // 遍历所有 button
     document.querySelectorAll('button').forEach(btn => {
+        // 【修改点】：特别排除画廊的关闭按钮，保证断线时用户仍可强制退出画廊
+        if (btn.classList.contains('lb-close-btn')) return;
+
         if (!btn.disabled) {
-            btn.dataset.wasActive = 'true'; // 打上标记，证明它有资格被恢复
+            btn.dataset.wasActive = 'true'; 
             btn.dataset.oldTitle = btn.title || '';
+            // 【修改点】：记录该按钮原有的内联背景色（如画廊截屏、循环等特殊按钮）
+            btn.dataset.oldBg = btn.style.backgroundColor || ''; 
+            
             btn.disabled = true;
             btn.style.backgroundColor = '#cbd5e0';
             btn.style.cursor = 'not-allowed';
@@ -1321,7 +1551,6 @@ function disableAllActions() {
         }
     });
   
-    // 记住原先可以勾选的复选框
     document.querySelectorAll('.cb-file').forEach(cb => {
         if (!cb.disabled) {
             cb.dataset.wasActive = 'true';
@@ -1329,7 +1558,6 @@ function disableAllActions() {
         }
     });
   
-    // 禁用所有超链接：弃用破坏性的 removeAttribute，改用 CSS 控制
     document.querySelectorAll('a').forEach(link => {
         link.dataset.oldPointerEvents = link.style.pointerEvents || '';
         link.style.pointerEvents = 'none'; // 关键：禁止鼠标点击事件
@@ -1338,11 +1566,14 @@ function disableAllActions() {
     });
 }
 
-// === 3. 新增重连与界面还原函数 ===
-async function reconnectServer() {
+// === 3. 新增重连与界面还原函数（带文件列表参数） ===
+async function reconnectServer(isWakeupRetry) {
+    // 确保只有显式传入 true 时才被视为唤醒后的重试，防止 Event 对象带来的干扰
+    const isRetry = isWakeupRetry === true; 
+    
     const tb = document.getElementById('timer-box');
     // 防止狂点重复触发
-    tb.innerHTML = '⏳ 正在尝试重连...';
+    tb.innerHTML = isRetry ? '⏳ 正在等待服务响应...' : '⏳ 正在尝试重连...';
     tb.style.color = '#ed8936';
 
     try {
@@ -1367,14 +1598,13 @@ async function reconnectServer() {
                 btn.style.cursor = 'pointer';
                 btn.title = btn.dataset.oldTitle || '';
                 
-                // 根据原始类名恢复按钮基础颜色
-                if (btn.classList.contains('btn-upload')) btn.style.backgroundColor = '#ed8936';
-                else if (btn.classList.contains('btn-download')) btn.style.backgroundColor = '#48bb78';
-                else btn.style.backgroundColor = '';
+                // 【修改点】：直接恢复记录的原有背景色。若是空值，则自然回退到 CSS 的 default active 样式
+                btn.style.backgroundColor = btn.dataset.oldBg || '';
 
                 // 清除辅助标记
                 delete btn.dataset.wasActive;
                 delete btn.dataset.oldTitle;
+                delete btn.dataset.oldBg;
             }
         });
 
@@ -1398,23 +1628,69 @@ async function reconnectServer() {
         fetchFiles();
 
         // 6. 如果聊天窗口此刻是开着的，恢复聊天长轮询，获取断线期间的新消息
-        if (chatState === 2) { 
-            if (!isChatPolling) {
+        if (typeof chatState !== 'undefined' && chatState === 2) { 
+            if (typeof isChatPolling !== 'undefined' && !isChatPolling) {
                 isChatPolling = true;
-                longPollChat();
+                if(typeof longPollChat === 'function') longPollChat();
             }
         }
 
-        showToast('✅ 重连成功，服务已恢复！');
+        showToast(isRetry ? '✅ 唤醒并重连成功！' : '✅ 重连成功，服务已恢复！');
 
     } catch (e) {
-        // 若依然无法连通，退回到之前的关闭状态，方便用户再次尝试重连
+        // 新增：识别是否为服务器相同主机 IP
+        let isHostMachine = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost');
+        if (!isHostMachine && window.location.hostname.includes('.')) {
+            const hostParts = window.location.hostname.split('.');
+            // myIpId 存储通常为 IP 的最后一段，借此比对是否是本机发起的局域网请求
+            if (hostParts.length === 4 && hostParts[3] === String(myIpId)) {
+                isHostMachine = true;
+            }
+        }
+
+        // 如果是相同主机访问，且目前不是被动作唤醒过后的重试阶段，则尝试触发动作 URI
+        if (isHostMachine && !isRetry) {
+            showToast('⚡ 正在尝试触发[局域网链接]重新唤醒服务器...', 3000);
+            
+            // 收集当前网页文件列表的原始本地路径
+            let fileListStr = '';
+            // 优先直接从全局 filesData 数组中提取所有文件的真实本地路径 (如 F:\LANHS04.txt)
+            if (typeof filesData !== 'undefined' && filesData.length > 0) {
+                const paths = filesData.map(f => f.path).filter(Boolean);
+                if (paths.length > 0) {
+                    fileListStr = encodeURIComponent(paths.join('\n'));
+                }
+            } else {
+                // 降级方案：从 DOM 中每一行的 dataset.path 获取
+                const rows = document.querySelectorAll('tr.file-row');
+                const paths = Array.from(rows).map(row => row.dataset.path).filter(Boolean);
+                if (paths.length > 0) {
+                    fileListStr = encodeURIComponent(paths.join('\n'));
+                }
+            }
+
+            // 拼接动作 URI 与历史文件参数
+            const actionUrl = 'quicker:runaction:2b7afb73-8f86-4046-b990-456c19236d55' + (fileListStr ? '?_qk_history' + fileListStr : '');
+
+            // 使用隐藏的 A 标签触发 Quicker 动作协议
+            const a = document.createElement('a');
+            a.href = actionUrl;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 给予动作执行及服务器启动一定的时间缓冲（约5秒）后重新尝试检测
+            setTimeout(() => reconnectServer(true), 5000);
+            return; // 终止当前执行流，等待二次回调处理
+        }
+
+        // 若依然无法连通（或非本机访问直接失败），退回到之前的关闭状态，方便用户再次尝试重连
         tb.innerHTML = '⛔ 服务已关闭 <span onclick="reconnectServer()" style="color:#4299e1; cursor:pointer; text-decoration:underline; font-size:13px; margin-left:12px; transition: color 0.2s;">🔄 手动重连</span>';
         tb.style.color = '#e53e3e';
-        showToast('❌ 重连失败，可能服务器暂未恢复');
+        showToast(isRetry ? '❌ 唤醒后仍未能连上服务器' : '❌ 重连失败，可能服务器暂未恢复');
     }
 }
-
 
 async function triggerUpload(targetToken, targetFolder) {
   try {
@@ -1751,8 +2027,26 @@ function sortByNamePath() {
   document.getElementById('sort-np-icon').innerText = states[npState];
 }
 
-let galleryImages = []; let galleryNames = []; let currentImgIndex = 0;
+// ==================== 画廊与媒体播放变量 ====================
+ 
+let currentGalleryMode = 'image'; // 'image' 或 'media'
+let currentLoopMode = localStorage.getItem('media_loop_mode') || 'list';// 'list'（默认开启列表循环）, 'single', 或 'none'
+
+
+// 图片画廊变量
+let galleryImages = []; 
+let galleryNames = []; 
+let currentImgIndex = 0;
+// 媒体画廊变量
+let mediaList = []; 
+let currentMediaIndex = 0;
+let currentLrcData = [];
+
 let isDragging = false, startX = 0, startY = 0, isAnimating = false, animTimer = null, lastTapTime = 0, isRotated = false;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchEndX = 0;
+let touchEndY = 0;
 
 function getImgSafe(offset) {
   const len = galleryImages.length; if(len === 0) return '';
@@ -1791,41 +2085,151 @@ function updateGalleryUI() {
   track.style.transform = 'translateX(-100vw)';
 }
 
-// 【修改点3】：增加 isChat 标记，默认 false
-function openGallery(imgUrl, isChat = false) {
-  if(animTimer) clearTimeout(animTimer);
-  isAnimating = false; isDragging = false;
-  
-  let links;
-  // 分离逻辑：依据来源获取专属范围内的图片
-  if (isChat) {
-      links = Array.from(document.querySelectorAll('.chat-bubble img'));
-  } else {
-      links = Array.from(document.querySelectorAll('.gallery-link'));
-  }
-  
-  galleryImages = links.map(el => el.tagName === 'IMG' ? el.src : el.querySelector('img').src);
-  galleryNames = links.map(el => {
-      if (isChat) return '聊天图片';
-      const row = el.closest('tr');
-      return row ? row.dataset.name : '';
-  });
-  
-  currentImgIndex = galleryImages.indexOf(imgUrl);
-  if(currentImgIndex === -1) currentImgIndex = 0;
-  
-  updateGalleryUI();
-  document.getElementById('lightbox').style.display = 'block';
+
+
+
+
+// 断开媒体连接，防止阻塞 HTTP Range 请求
+function stopAndCleanupMedia(mediaEl) {
+    stopCoverCycling(); // 👈 新增：停止封面轮播定时器
+    if (!mediaEl) return;
+    try {
+        mediaEl.pause();
+        mediaEl.removeAttribute('src');
+        mediaEl.load(); // 强制浏览器释放网络连接
+    } catch (e) {}
 }
 
+function stopCoverCycling() {
+    if (coverCycleTimer) {
+        clearInterval(coverCycleTimer);
+        coverCycleTimer = null;
+    }
+}
+
+// 统一切换循环模式（互斥切换）（保存状态到 localStorage 并更新 UI）
+function toggleLoopMode(mode, e) {
+    if (e) e.stopPropagation();
+    currentLoopMode = mode;
+    localStorage.setItem('media_loop_mode', mode); // 持久化记住模式
+    updateLoopUI();
+// 【关键修复】：实时将模式同步给当前播放的视频元素
+    const currentVideo = document.querySelector('video'); //获取你当前播放器的 video 变量/DOM
+    if (currentVideo) {
+        // 如果是单曲循环，开启原生 loop；如果是列表循环，关闭原生 loop
+        currentVideo.loop = (currentLoopMode === 'single');
+    }
+    const currentAudio = document.querySelector('audio'); // 获取你当前播放器的 audio
+    if (currentAudio) {
+        // 如果是单曲循环，开启原生 loop；如果是列表循环，关闭原生 loop
+        currentAudio.loop = (currentLoopMode === 'single');
+    }
+}
+
+// 专门用于同步 UI 按钮高亮状态的函数
+function updateLoopUI() {
+    const btnList = document.getElementById('btn-loop-list');
+    const btnSingle = document.getElementById('btn-loop-single');
+    if (btnList && btnSingle) {
+        if (currentLoopMode === 'single') {
+            btnList.classList.remove('active');
+            btnSingle.classList.add('active');
+        } else {
+            btnList.classList.add('active');
+            btnSingle.classList.remove('active');
+        }
+    }
+}
+
+// 获取当前正在播放的 DOM 媒体对象
+function getActiveMediaEl() {
+    const video = document.getElementById('lb-video');
+    const audio = document.getElementById('lb-audio');
+    if (video && video.style.display !== 'none') return video;
+    if (audio && audio.style.display !== 'none') return audio;
+    return null;
+}
+
+// 【修改点3】：增加 isChat 标记，默认 false
+// 打开图片画廊（过滤只包含图片）
+function openGallery(imgUrl, isChat = false) {
+    currentGalleryMode = 'image';
+    
+    // 停止并清空可能在播放的媒体
+    stopAndCleanupMedia(document.getElementById('lb-video'));
+    stopAndCleanupMedia(document.getElementById('lb-audio'));
+
+    let links = isChat ? Array.from(document.querySelectorAll('.chat-bubble img')) 
+                       : Array.from(document.querySelectorAll('.gallery-link img.preview'));
+    // 如果不是聊天图片，过滤掉属于音视频文件的封面预览图
+    if (!isChat) {
+        const mediaExts = ['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'm4a', 'aac'];
+        links = links.filter(img => {
+            const row = img.closest('tr');
+            if (!row) return true;
+            const name = row.dataset.name || '';
+            const fExt = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+            return !mediaExts.includes(fExt);
+        });
+    }
+
+    galleryImages = links.map(el => el.src);
+    galleryNames = links.map(el => {
+        if (isChat) return '聊天图片';
+        const row = el.closest('tr');
+        return row ? (row.dataset.name || '') : '';
+    });
+
+    currentImgIndex = galleryImages.indexOf(imgUrl);
+    if (currentImgIndex === -1) currentImgIndex = 0;
+
+    // 显隐控件
+    document.getElementById('lb-track').style.display = 'flex';
+    document.getElementById('lb-rotate-btn').style.display = 'flex';
+    document.getElementById('lb-media-box').style.display = 'none';
+    document.getElementById('lb-media-controls').style.display = 'none';
+
+    updateGalleryUI();
+    document.getElementById('lightbox').style.display = 'block';
+}
+
+
+
+
+
+
+// 媒体播放结束回调
+function onMediaEnded() {
+    if (currentLoopMode === 'list') {
+        navigateGallery(1); // 自动下一曲
+    }
+}
+
+
+// 画廊导航（统一处理图片与媒体的左右切换）
+function navigateGallery(dir, e) {
+    if (e) e.stopPropagation();
+    if (currentGalleryMode === 'image') {
+        changeImg(dir, e);
+    } else if (currentGalleryMode === 'media') {
+        playMediaItem(currentMediaIndex + dir);
+    }
+}
+
+// 关闭画廊（清空与断开媒体请求）
 function closeGallery(e, force = false) {
-  if (force || (e && (e.target.id === 'lightbox' || e.target.classList.contains('lb-slide')))) {
-    document.getElementById('lightbox').style.display = 'none';
-    if(animTimer) clearTimeout(animTimer);
-    isAnimating = false; isDragging = false;
-    resetRotation();
-    resetTimer();
-  }
+    if (force || (e && (e.target.id === 'lightbox' || e.target.classList.contains('lb-slide')))) {
+        // 断开音视频连接
+        stopAndCleanupMedia(document.getElementById('lb-video'));
+        stopAndCleanupMedia(document.getElementById('lb-audio'));
+
+        document.getElementById('lightbox').style.display = 'none';
+        if (animTimer) clearTimeout(animTimer);
+        isAnimating = false; 
+        isDragging = false;
+        resetRotation();
+        resetTimer();
+    }
 }
 
 function changeImg(dir, e) {
@@ -2521,6 +2925,1206 @@ fetch(SERVER_URL + 'truststatus').then(r=>r.text()).then(res=>{
      document.querySelectorAll('.trust-hidden').forEach(el => el.style.display = '');
   }
 }).catch(()=>{});
+
+// === 全局状态：用于媒体播放列表切换 ===
+let currentMediaPlaylist = [];
+let currentMediaIdx = 0;
+
+
+
+
+
+
+
+// 打开媒体画廊（过滤只包含音视频）
+function openMediaGallery(mediaUrl, ext, fileName, token) {
+    currentGalleryMode = 'media';
+    
+    // 构建仅包含媒体文件的播放列表
+    mediaList = [];
+    const mediaExts = ['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'm4a', 'aac'];
+    const rows = document.querySelectorAll('#file-list-body tr.file-row');
+
+    rows.forEach(row => {
+        const name = row.dataset.name || '';
+        const fExt = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+        if (mediaExts.includes(fExt)) {
+            const link = row.querySelector('.gallery-link');
+            const previewImg = row.querySelector('img.preview');
+            
+            let url = '';
+            let itemToken = row.dataset.token || ''; // 优先读取 row 上的 dataset.token
+            
+            if (link) {
+                const onclickStr = link.getAttribute('onclick') || '';
+                // 兼容解析 openMediaGallery('url', 'ext', 'name', 'token')
+                const match = onclickStr.match(/openMediaGallery\s*\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?(?:\s*,\s*'([^']*)')?(?:\s*,\s*'([^']*)')?\s*\)/);
+                if (match) {
+                    url = match[1] || '';
+                    if (match[4]) itemToken = match[4]; // 提取第 4 个参数 token
+                }
+            }
+
+            // 若正则没提取到且正是当前项，使用传入的 token 作为保底
+            if (!itemToken && url === mediaUrl) {
+                itemToken = token || '';
+            }
+
+            if (url) {
+                mediaList.push({
+                    url: url,
+                    ext: fExt,
+                    name: name,
+                    token: itemToken || token || 'default',
+                    thumbId: previewImg ? previewImg.id : null
+                });
+            }
+        }
+    });
+
+    currentMediaIndex = mediaList.findIndex(m => m.url === mediaUrl);
+    if (currentMediaIndex === -1) {
+        mediaList = [{ url: mediaUrl, ext: ext, name: fileName, token: token || 'default', thumbId: null }];
+        currentMediaIndex = 0;
+    }
+
+    // 显隐控件
+    document.getElementById('lb-track').style.display = 'none';
+    document.getElementById('lb-rotate-btn').style.display = 'none';
+    document.getElementById('lb-media-box').style.display = 'flex';
+    document.getElementById('lb-media-controls').style.display = 'flex';
+
+    document.getElementById('lightbox').style.display = 'block';
+    
+    // 初始化循环模式 UI
+    toggleLoopMode(currentLoopMode);
+
+    playMediaItem(currentMediaIndex);
+updateLoopUI();
+pushGalleryHistoryState();
+}
+
+
+// 播放指定索引的媒体项
+function playMediaItem(index) {
+    if (mediaList.length === 0) return;
+    currentMediaIndex = (index + mediaList.length) % mediaList.length;
+    const item = mediaList[currentMediaIndex];
+    // 获取 DOM 节点
+    const mediaBox = document.getElementById('lb-media-box');
+    const audioWrapper = document.getElementById('lb-audio-wrapper');
+    const audioEl = document.getElementById('lb-audio');
+    const videoEl = document.getElementById('lb-video');
+    const coverEl = document.getElementById('lb-media-cover');
+    const titleEl = document.getElementById('lb-audio-title');
+    const counterEl = document.getElementById('lb-counter');
+    const lyricsBox = document.getElementById('lb-lyrics');
+    const captureBtn = document.getElementById('btn-capture');
+
+    // 1. 先彻底断开已有播放连接，防止请求堵塞（内部会自动调用 stopCoverCycling）
+    stopAndCleanupMedia(videoEl);
+    stopAndCleanupMedia(audioEl);
+
+    // 2. 更新顶部计数与文件名
+    const counterText = `${currentMediaIndex + 1} / ${mediaList.length} ${item.name}`;
+    counterEl.innerText = counterText;
+    counterEl.title = counterText;
+
+    
+    if (audioWrapper) audioWrapper.style.display = 'none';
+    const isVideo = ['mp4', 'webm', 'ogg'].includes(item.ext);
+
+    if (isVideo) {
+        // --- 视频模式 ---
+        audioEl.style.display = 'none';
+        lyricsBox.style.display = 'none';
+        videoEl.style.display = 'block';
+        captureBtn.style.display = 'block';
+
+        videoEl.src = item.url;
+        videoEl.loop = (currentLoopMode === 'single');
+        videoEl.onended = onMediaEnded;
+        videoEl.play().catch(() => {});
+    } else {
+        // --- 音频模式 (包含 FLAC / MP3 / WAV 等) ---
+        audioWrapper.style.display = 'flex';
+        // 保存原始文件名，初始化标题
+        titleEl.dataset.filename = item.name; 
+        titleEl.innerText = item.name? item.name.replace(/‘/g, "'") : '未知音频';
+        videoEl.style.display = 'none';
+        captureBtn.style.display = 'none';
+        audioEl.style.display = 'block';
+        lyricsBox.style.display = 'block';
+ 
+        // 🔴从缓存 globalMediaCache 中获取封面并自动处理多封面轮播
+        const cache = globalMediaCache[item.url];
+        if (cache) {
+            coverEl.src = cache.coverUrl;
+            
+            // 当解析到的图片超过 1 张时，启动 5 秒定时轮播
+            if (cache.pictureUrls && cache.pictureUrls.length > 1) {
+                let picIndex = 0;
+                coverCycleTimer = setInterval(() => {
+                    picIndex = (picIndex + 1) % cache.pictureUrls.length;
+                    const picObj = cache.pictureUrls[picIndex];
+                    coverEl.src = (typeof picObj === 'object' && picObj.url) ? picObj.url : picObj;
+                }, 5000);
+            }
+            if (cache.title && cache.artist) {
+          const displayTitle = cache.title +' '+ item.ext;
+          titleEl.innerText = ` ${displayTitle}  ${cache.artist}`;
+          }
+        } else {
+            // 如果缓存不存在，兜底使用默认图标
+            coverEl.src = defaultMusicIcon;
+   
+        }
+        coverEl.style.display = 'block'; // 👈 必须显式设置为 block
+        audioEl.src = item.url;
+        audioEl.loop = (currentLoopMode === 'single');
+        audioEl.onended = onMediaEnded;
+        audioEl.ontimeupdate = () => syncLyrics(audioEl.currentTime);
+        
+        // 加载同名歌词
+        loadLyrics(item);
+        audioEl.play().catch(() => {});
+    }
+}
+
+
+// 缩略图生成与数据获取 
+async function lazyGenerateMediaThumb(url, ext, thumbId, fileName) {
+    const imgEl = document.getElementById(thumbId);
+    const isVideo = ['mp4', 'webm', 'ogg'].includes(ext);
+    const isAudio = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ape'].includes(ext);
+
+    // 命中缓存则直接复用
+    if (globalMediaCache[url] && imgEl && !isVideo) {
+        imgEl.src = globalMediaCache[url].coverUrl;
+        return;
+    }
+
+    if (isVideo) {
+        const v = document.createElement('video');
+        v.src = url;
+        v.muted = true;
+        v.playsInline = true;
+        v.currentTime = 2; // 提取第2秒的画面
+        v.addEventListener('seeked', () => {
+            try {
+                const canvas = document.createElement('canvas');
+                // 缩小尺寸，仅作为列表缩略图
+                canvas.width = v.videoWidth / 4; 
+                canvas.height = v.videoHeight / 4;
+                canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+                imgEl.src = canvas.toDataURL('image/jpeg', 0.5);
+            } catch (e) { console.warn("跨域拦截无法生成缩略图"); }
+        }, { once: true });
+        return; 
+    }
+
+ if (isAudio) {
+try {
+        let combinedBuffer;
+        const FIVE_MB = 5 * 1024 * 1024;
+        const ONE_MB = 1 * 1024 * 1024;
+
+        let fileSize = 0;
+
+        // 1. 先通过 HEAD 请求准确获取文件总大小
+        try {
+            const headResp = await fetch(url, { method: 'HEAD' });
+            if (headResp.ok) {
+                const contentLength = headResp.headers.get('content-length');
+                if (contentLength) {
+                    fileSize = parseInt(contentLength, 10);
+                }
+            }
+        } catch (e) {
+            console.warn("HEAD 请求被拦截或不支持，将回退到默认获取模式", e);
+        }
+
+        // 2. 根据文件大小采取最安全的数据获取策略
+        if (fileSize > 0 && fileSize <= FIVE_MB) {
+            // 【小文件最佳路径】：文件 <= 5MB，直接发起普通 GET 请求获取完整文件
+            // 不携带 Range 头，行为与本地 HTML 读取 File 完全一致！
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP Error: ${resp.status}`);
+            combinedBuffer = await resp.arrayBuffer();
+
+        } else if (fileSize > FIVE_MB) {
+            // 【大文件优化路径】：已知文件 > 5MB，分别拉取头部 5MB 和尾部 1MB 进行拼接
+            const [headResp, tailResp] = await Promise.all([
+                fetch(url, { headers: { Range: `bytes=0-${FIVE_MB - 1}` } }),
+                fetch(url, { headers: { Range: `bytes=${fileSize - ONE_MB}-${fileSize - 1}` } })
+            ]);
+
+            if (headResp.ok && tailResp.ok) {
+                const headBuffer = await headResp.arrayBuffer();
+                const tailBuffer = await tailResp.arrayBuffer();
+
+                const merged = new Uint8Array(headBuffer.byteLength + tailBuffer.byteLength);
+                merged.set(new Uint8Array(headBuffer), 0);
+                merged.set(new Uint8Array(tailBuffer), headBuffer.byteLength);
+                combinedBuffer = merged.buffer;
+            } else {
+                // 若 Range 分段请求失败，降级为拉取全量文件
+                const fullResp = await fetch(url);
+                combinedBuffer = await fullResp.arrayBuffer();
+            }
+
+        } else {
+            // 【未拿到大小的兜底路径】：HEAD 被跨域限制时，直接发起一次普通全量 GET 请求
+            const fullResp = await fetch(url);
+            if (!fullResp.ok) throw new Error(`HTTP Error: ${fullResp.status}`);
+            combinedBuffer = await fullResp.arrayBuffer();
+        }
+
+        // 3. 传入拼接或完整读取后的 ArrayBuffer 提取元数据分别拉取头部 5MB 和尾部 1MB 进行拼接
+        const meta = extractMetadataFromBuffer(combinedBuffer);
+
+            // 将所有提取出的图片转换成 Blob URL 列表
+            let pictureUrls = meta.pictures.map(p => ({
+                url: URL.createObjectURL(p.blob),
+                typeCode: p.typeCode,
+                typeName: p.typeName
+            }));
+
+            // 取首个图片做主封面
+            let coverUrl = pictureUrls.length > 0 ? pictureUrls[0].url : null;
+            
+            // 兜底逻辑
+            if (!coverUrl) coverUrl = findLocalImageFallback(url, fileName);
+            if (!coverUrl) coverUrl = defaultMusicIcon;
+            
+            // 写入全局缓存（coverUrl 保持指向第一张图，pictureUrls 保存完整的图片数组）
+            globalMediaCache[url] = { 
+                coverUrl: coverUrl, 
+                pictureUrls: pictureUrls.length > 0 ? pictureUrls : [{ url: coverUrl, typeCode: 3, typeName: '封面' }],
+                artist: meta.artist, 
+                title: meta.title 
+            };
+
+            if (imgEl) imgEl.src = coverUrl;
+
+            // 若当前媒体刚好处于正在播放状态，UIupdateActiveGalleryMeta(url);自动热更新
+            
+        } catch (e) {
+            const fallbackUrl = findLocalImageFallback(url, fileName) || defaultMusicIcon;
+            globalMediaCache[url] = { coverUrl: fallbackUrl, artist: '', title: '' };
+            if (imgEl) imgEl.src = fallbackUrl;
+        }
+    }
+}
+
+
+// 辅助功能：轻量级二进制元数据读取 (支持 ID3v2/MP3/WAV, FLAC, M4A/AAC/MP4)
+/**
+ * 从 ArrayBuffer 中提取元数据及所有内嵌图片（支持 MP3/FLAC/WAV/APE/M4A）
+ * @param {ArrayBuffer} buffer 
+ * @returns { { pictures: Array, coverBlob: Blob|null, artist: string, title: string } }
+ */
+// 标准 ID3v2 / FLAC 图像类型定义映射表
+const PICTURE_TYPES = {
+    0: '其他图片', 1: '32x32 图标', 2: '其他图标', 3: '封面 (Front)', 4: '封底 (Back)',
+    5: '宣传折页', 6: 'CD/盘面', 7: '领唱/主奏', 8: '歌手/艺人', 9: '指挥家',
+    10: '乐队/合奏组', 11: '作曲家', 12: '作词人', 13: '录音场地', 14: '录音现场',
+    15: '演出现场', 16: '画面截图', 17: '插画', 18: '艺人标志', 19: '出版商标志'
+};
+
+/**
+ * 从 ArrayBuffer 中提取元数据及所有内嵌图片（支持 MP3/FLAC/WAV/APE/M4A）
+ * @param {ArrayBuffer} buffer 
+ * @returns { { pictures: Array, coverBlob: Blob|null, artist: string, title: string } }
+ */
+function extractMetadataFromBuffer(buffer) {
+    let pictures = [], artist = '', title = '';
+    const uint8 = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    const decoder = new TextDecoder('utf-8');
+
+    // 辅助解析：ID3v2 标签（支持 MP3, WAV 内嵌 ID3 等）
+    function parseID3v2(dataBuffer) {
+        if (!dataBuffer || dataBuffer.byteLength < 10) return { found: false, title: '', artist: '', pictures: [] };
+        const u8 = new Uint8Array(dataBuffer);
+        let t = '', a = '', pics = [], found = false;
+
+        // 1. 动态扫描 "ID3" 头部 (0x49, 0x44, 0x33)，防止头部有填充字节
+        let id3Start = -1;
+        for (let i = 0; i <= u8.length - 10; i++) {
+            if (u8[i] === 0x49 && u8[i + 1] === 0x44 && u8[i + 2] === 0x33) {
+                id3Start = i;
+                break;
+            }
+        }
+
+        if (id3Start !== -1) {
+            found = true;
+            const major = u8[id3Start + 3];
+            const id3Size = ((u8[id3Start + 6] & 0x7F) << 21) |
+                            ((u8[id3Start + 7] & 0x7F) << 14) |
+                            ((u8[id3Start + 8] & 0x7F) << 7) |
+                             (u8[id3Start + 9] & 0x7F);
+            const limit = Math.min(id3Start + 10 + id3Size, u8.length);
+            let offset = id3Start + 10;
+
+            const decodeText = (subArray, encoding) => {
+                let label = 'utf-8';
+                if (encoding === 0) label = 'iso-8859-1';
+                else if (encoding === 1) label = 'utf-16';
+                else if (encoding === 2) label = 'utf-16be';
+                else if (encoding === 3) label = 'utf-8';
+                try {
+                    return new TextDecoder(label).decode(subArray).replace(/\0/g, '').trim();
+                } catch (e) { return ''; }
+            };
+
+            while (offset < limit - 10) {
+                if (u8[offset] === 0) break; // 空字节填充结束
+
+                const frameId = String.fromCharCode(u8[offset], u8[offset + 1], u8[offset + 2], u8[offset + 3]);
+                let frameSize = (major === 4) ?
+                    (((u8[offset + 4] & 0x7F) << 21) | ((u8[offset + 5] & 0x7F) << 14) | ((u8[offset + 6] & 0x7F) << 7) | (u8[offset + 7] & 0x7F)) :
+                    (((u8[offset + 4] << 24) | (u8[offset + 5] << 16) | (u8[offset + 6] << 8) | u8[offset + 7]) >>> 0);
+
+                if (frameSize <= 0 || offset + 10 + frameSize > u8.length) break;
+
+                const fStart = offset + 10;
+                const fEnd = fStart + frameSize;
+
+                // --- APIC (封面/多图片提取) ---
+                if (frameId === 'APIC') {
+                    let pOff = fStart;
+                    const textEnc = u8[pOff++];
+
+                    // 1. 读取 MIME Type (\0 结尾)
+                    let mEnd = pOff;
+                    while (mEnd < fEnd && u8[mEnd] !== 0) mEnd++;
+                    let mimeType = new TextDecoder('iso-8859-1').decode(u8.subarray(pOff, mEnd)).trim();
+                    pOff = mEnd + 1;
+
+                    if (!mimeType || mimeType === '-->') mimeType = 'image/jpeg';
+                    else if (mimeType.toLowerCase() === 'png') mimeType = 'image/png';
+                    else if (mimeType.toLowerCase() === 'jpg' || mimeType.toLowerCase() === 'jpeg') mimeType = 'image/jpeg';
+
+                    // 2. 读取 Picture Type (1 字节)
+                    const picTypeCode = u8[pOff++];
+
+                    // 3. 跳过 Description
+                    if (textEnc === 1 || textEnc === 2) {
+                        while (pOff < fEnd - 1) {
+                            if (u8[pOff] === 0 && u8[pOff + 1] === 0) { pOff += 2; break; }
+                            pOff += 2;
+                        }
+                    } else {
+                        while (pOff < fEnd && u8[pOff] !== 0) pOff++;
+                        pOff++;
+                    }
+
+                    // 4. 收集图片 Binary
+                    if (pOff < fEnd) {
+                        pics.push({
+                            blob: new Blob([u8.subarray(pOff, fEnd)], { type: mimeType }),
+                            typeCode: picTypeCode,
+                            typeName: (typeof PICTURE_TYPES !== 'undefined' && PICTURE_TYPES[picTypeCode]) ? PICTURE_TYPES[picTypeCode] : '封面/图片'
+                        });
+                    }
+                } 
+                // --- 文本标签 ---
+                else if (frameId === 'TIT2') {
+                    t = decodeText(u8.subarray(fStart + 1, fEnd), u8[fStart]);
+                } else if (frameId === 'TPE1') {
+                    a = decodeText(u8.subarray(fStart + 1, fEnd), u8[fStart]);
+                }
+
+                offset += 10 + frameSize;
+            }
+        }
+        return { found, title: t, artist: a, pictures: pics };
+    }
+
+    // 辅助解析 APEv2 标签 (获取尾部封面数据)
+    function parseAPETag(dataBuffer) {
+        if (!dataBuffer) return { found: false };
+        const u8 = new Uint8Array(dataBuffer);
+        const v = new DataView(dataBuffer);
+        const magic = [0x41, 0x50, 0x45, 0x54, 0x41, 0x47, 0x45, 0x58]; // "APETAGEX"
+        
+        let pos = -1;
+        for (let i = u8.length - 32; i >= 0; i--) {
+            let match = true;
+            for (let j = 0; j < 8; j++) {
+                if (u8[i + j] !== magic[j]) { match = false; break; }
+            }
+            if (match) { pos = i; break; }
+        }
+        if (pos === -1) return { found: false };
+
+        const tagSize = v.getUint32(pos + 12, true);
+        const itemCount = v.getUint32(pos + 16, true);
+        const flags = v.getUint32(pos + 20, true);
+        const isHeader = (flags & 0x20000000) !== 0;
+
+        let itemOffset = isHeader ? (pos + 32) : Math.max(0, pos + 32 - tagSize);
+        let t = '', a = '', pics = [];
+
+        for (let i = 0; i < itemCount; i++) {
+            if (itemOffset + 8 > u8.length) break;
+            const valLen = v.getUint32(itemOffset, true);
+            const itemFlags = v.getUint32(itemOffset + 4, true);
+            const isBinary = ((itemFlags >> 1) & 0x03) === 1;
+
+            let keyEnd = itemOffset + 8;
+            while (keyEnd < u8.length && u8[keyEnd] !== 0) keyEnd++;
+            if (keyEnd >= u8.length) break;
+
+            const key = new TextDecoder('ascii').decode(u8.subarray(itemOffset + 8, keyEnd)).toUpperCase();
+            const valStart = keyEnd + 1;
+            const valEnd = valStart + valLen;
+            if (valEnd > u8.length) break;
+
+            if (isBinary) {
+                if (key.includes('COVER ART')) {
+                    let imgStart = valStart;
+                    while (imgStart < valEnd && u8[imgStart] !== 0) imgStart++;
+                    imgStart++; 
+                    if (imgStart < valEnd) {
+                        const typeCode = key.includes('BACK') ? 4 : 3;
+                        pics.push({
+                            blob: new Blob([u8.subarray(imgStart, valEnd)], { type: 'image/jpeg' }),
+                            typeCode: typeCode,
+                            typeName: (typeof PICTURE_TYPES !== 'undefined' && PICTURE_TYPES[typeCode]) ? PICTURE_TYPES[typeCode] : key
+                        });
+                    }
+                }
+            } else {
+                const valText = decoder.decode(u8.subarray(valStart, valEnd)).trim();
+                if (key === 'TITLE') t = valText;
+                else if (key === 'ARTIST') a = valText;
+            }
+            itemOffset = valEnd;
+        }
+        return { found: true, title: t, artist: a, pictures: pics };
+    }
+
+    try {
+        let hasTags = false;
+
+        // 1. FLAC 格式解析
+        if (uint8[0] === 0x66 && uint8[1] === 0x4C && uint8[2] === 0x61 && uint8[3] === 0x43) { 
+            hasTags = true;
+            let offset = 4;
+            while (offset < uint8.length - 4) {
+                const header = view.getUint32(offset, false);
+                const isLast = (header & 0x80000000) !== 0;
+                const blockType = (header >> 24) & 0x7F;
+                const length = header & 0x00FFFFFF;
+                const blockStart = offset + 4;
+
+                if (blockType === 6) { // PICTURE
+                    let pOffset = blockStart;
+                    const picTypeCode = view.getUint32(pOffset, false); pOffset += 4;
+                    const mimeLen = view.getUint32(pOffset, false); pOffset += 4;
+                    const mimeType = decoder.decode(uint8.subarray(pOffset, pOffset + mimeLen)); pOffset += mimeLen;
+                    const descLen = view.getUint32(pOffset, false); pOffset += 4 + descLen + 16;
+                    const picDataLen = view.getUint32(pOffset, false); pOffset += 4;
+                    
+                    pictures.push({
+                        blob: new Blob([uint8.subarray(pOffset, pOffset + picDataLen)], { type: mimeType || 'image/jpeg' }),
+                        typeCode: picTypeCode,
+                        typeName: (typeof PICTURE_TYPES !== 'undefined' && PICTURE_TYPES[picTypeCode]) ? PICTURE_TYPES[picTypeCode] : '图片'
+                    });
+                } else if (blockType === 4) { // VORBIS_COMMENT
+                    let cOffset = blockStart;
+                    const vendorLen = view.getUint32(cOffset, true); cOffset += 4 + vendorLen;
+                    const commentListLen = view.getUint32(cOffset, true); cOffset += 4;
+                    
+                    for (let i = 0; i < commentListLen; i++) {
+                        if (cOffset + 4 > blockStart + length) break;
+                        const commentLen = view.getUint32(cOffset, true); cOffset += 4;
+                        if (cOffset + commentLen > blockStart + length) break;
+                        
+                        const comment = decoder.decode(uint8.subarray(cOffset, cOffset + commentLen));
+                        cOffset += commentLen;
+                        const eqIdx = comment.indexOf('=');
+                        if (eqIdx !== -1) {
+                            const key = comment.slice(0, eqIdx).toUpperCase();
+                            const val = comment.slice(eqIdx + 1);
+                            if (key === 'TITLE') title = val;
+                            if (key === 'ARTIST') artist = val;
+                        }
+                    }
+                }
+                offset += 4 + length;
+                if (isLast) break;
+            }
+        } 
+        // 2. WAV 格式解析（RIFF ... WAVE 结构）
+        else if (
+            uint8.length >= 12 &&
+            uint8[0] === 0x52 && uint8[1] === 0x49 && uint8[2] === 0x46 && uint8[3] === 0x46 && // "RIFF"
+            uint8[8] === 0x57 && uint8[9] === 0x41 && uint8[10] === 0x56 && uint8[11] === 0x45  // "WAVE"
+        ) {
+            hasTags = true;
+            let offset = 12;
+            let foundInLoop = false;
+
+            // --- 阶段 A：尝试标准 RIFF 链表遍历 ---
+            while (offset < uint8.length - 8) {
+                const chunkId = String.fromCharCode(uint8[offset], uint8[offset + 1], uint8[offset + 2], uint8[offset + 3]);
+                const chunkSize = view.getUint32(offset + 4, true); // 小端序
+                const cStart = offset + 8;
+
+                // 若 chunk 声明大小超出了拼接后的 buffer 长度（如 data 块声明了 38MB 但缓存仅 6MB），中断线性遍历
+                if (chunkSize <= 0 || cStart + chunkSize > uint8.length) {
+                    break;
+                }
+
+                // 1) 解析 WAV 内嵌的 id3 块
+                if (chunkId.toLowerCase() === 'id3 ') {
+                    const id3SubArray = uint8.subarray(cStart, cStart + chunkSize);
+                    const id3Res = parseID3v2(id3SubArray);
+                    if (!title && id3Res.title) title = id3Res.title;
+                    if (!artist && id3Res.artist) artist = id3Res.artist;
+                    if (id3Res.pictures.length > 0) {
+                        pictures.push(...id3Res.pictures);
+                        foundInLoop = true;
+                    }
+                } 
+                // 2) 解析 RIFF LIST INFO 块
+                else if (chunkId === 'LIST') {
+                    const listType = String.fromCharCode(uint8[cStart], uint8[cStart + 1], uint8[cStart + 2], uint8[cStart + 3]);
+                    if (listType === 'INFO') {
+                        let lOffset = cStart + 4;
+                        const lEnd = cStart + chunkSize;
+                        while (lOffset < lEnd - 8) {
+                            const subId = String.fromCharCode(uint8[lOffset], uint8[lOffset + 1], uint8[lOffset + 2], uint8[lOffset + 3]);
+                            const subSize = view.getUint32(lOffset + 4, true);
+                            const subStart = lOffset + 8;
+                            if (subSize <= 0 || subStart + subSize > lEnd) break;
+
+                            const subText = decoder.decode(uint8.subarray(subStart, subStart + subSize)).replace(/\0/g, '').trim();
+                            if (subId === 'INAM' && !title) title = subText;
+                            else if (subId === 'IART' && !artist) artist = subText;
+
+                            lOffset += 8 + subSize + (subSize % 2);
+                        }
+                        if (title || artist) foundInLoop = true;
+                    }
+                }
+                offset += 8 + chunkSize + (chunkSize % 2); // RIFF 偶数字节对齐
+            }
+
+            // --- 阶段 B：容错兜底（针对 Head+Tail 抽样拼接导致的指针截断）---
+            if (!foundInLoop || pictures.length === 0) {
+                for (let i = 0; i < uint8.length - 12; i++) {
+                    // 1. 全局扫描 "id3 " 或 "ID3 " 标记
+                    if ((uint8[i] === 0x69 || uint8[i] === 0x49) && 
+                        (uint8[i+1] === 0x64 || uint8[i+1] === 0x44) && 
+                        uint8[i+2] === 0x33 && uint8[i+3] === 0x20) {
+                        const subSize = view.getUint32(i + 4, true);
+                        const id3Start = i + 8;
+                        const id3End = Math.min(id3Start + subSize, uint8.length);
+                        if (id3Start < uint8.length) {
+                            const id3Res = parseID3v2(uint8.subarray(id3Start, id3End));
+                            if (!title && id3Res.title) title = id3Res.title;
+                            if (!artist && id3Res.artist) artist = id3Res.artist;
+                            if (id3Res.pictures.length > 0) pictures.push(...id3Res.pictures);
+                        }
+                    }
+                    // 2. 全局扫描 "LIST" 且带有 "INFO" 的标记
+                    else if (uint8[i] === 0x4C && uint8[i+1] === 0x49 && uint8[i+2] === 0x53 && uint8[i+3] === 0x54 &&
+                             uint8[i+8] === 0x49 && uint8[i+9] === 0x4E && uint8[i+10] === 0x46 && uint8[i+11] === 0x4F) {
+                        const listSize = view.getUint32(i + 4, true);
+                        let lOffset = i + 12;
+                        const lEnd = Math.min(i + 8 + listSize, uint8.length);
+                        while (lOffset < lEnd - 8) {
+                            const subId = String.fromCharCode(uint8[lOffset], uint8[lOffset + 1], uint8[lOffset + 2], uint8[lOffset + 3]);
+                            const subSize = view.getUint32(lOffset + 4, true);
+                            const subStart = lOffset + 8;
+                            if (subSize <= 0 || subStart + subSize > lEnd) break;
+
+                            const subText = decoder.decode(uint8.subarray(subStart, subStart + subSize)).replace(/\0/g, '').trim();
+                            if (subId === 'INAM' && !title) title = subText;
+                            else if (subId === 'IART' && !artist) artist = subText;
+
+                            lOffset += 8 + subSize + (subSize % 2);
+                        }
+                    }
+                }
+            }
+        }
+        // 3. ID3v2 (MP3) 格式解析
+        else if (uint8[0] === 0x49 && uint8[1] === 0x44 && uint8[2] === 0x33) {
+            const id3Res = parseID3v2(buffer);
+            hasTags = id3Res.found;
+            if (id3Res.title) title = id3Res.title;
+            if (id3Res.artist) artist = id3Res.artist;
+            if (id3Res.pictures.length > 0) pictures = id3Res.pictures;
+        }
+        // 4. M4A / MP4 (AAC) 格式解析
+        else if (uint8.length > 8 && ['ftyp', 'moov', 'mdat', 'free', 'skip', 'wide'].includes(String.fromCharCode(uint8[4], uint8[5], uint8[6], uint8[7]))) {
+            hasTags = true;
+            let offset = 0;
+            while (offset < uint8.length - 8) {
+                let size = (uint8[offset] << 24) | (uint8[offset + 1] << 16) | (uint8[offset + 2] << 8) | uint8[offset + 3];
+                let type = String.fromCharCode(uint8[offset + 4], uint8[offset + 5], uint8[offset + 6], uint8[offset + 7]);
+                if (size === 0) break;
+                if (['moov', 'udta', 'meta', 'ilst'].includes(type)) {
+                    offset += (type === 'meta' ? 12 : 8); 
+                    continue;
+                }
+                if (type === 'covr') { 
+                    let dOff = offset + 8;
+                    let dSize = (uint8[dOff] << 24) | (uint8[dOff + 1] << 16) | (uint8[dOff + 2] << 8) | uint8[dOff + 3];
+                    if (String.fromCharCode(uint8[dOff + 4], uint8[dOff + 5], uint8[dOff + 6], uint8[dOff + 7]) === 'data') {
+                        pictures.push({
+                            blob: new Blob([uint8.subarray(dOff + 16, dOff + dSize)], { type: 'image/jpeg' }),
+                            typeCode: 3,
+                            typeName: '封面 (Front)'
+                        });
+                    }
+                } else if (type === '©ART') { 
+                    artist = decoder.decode(uint8.subarray(offset + 24, offset + size));
+                } else if (type === '©nam') { 
+                    title = decoder.decode(uint8.subarray(offset + 24, offset + size));
+                }
+                offset += size;
+            }
+        }
+
+        // 5. 保底 APE Tag 扫描机制
+        if (!hasTags || pictures.length === 0 || !title || !artist) {
+            const apeRes = parseAPETag(buffer);
+            if (apeRes && apeRes.found) {
+                if (!title && apeRes.title) title = apeRes.title;
+                if (!artist && apeRes.artist) artist = apeRes.artist;
+                if (apeRes.pictures.length > 0) {
+                    pictures.push(...apeRes.pictures);
+                }
+            }
+        }
+    } catch (e) { 
+        console.warn("Meta extract skipped:", e); 
+    }
+
+    // 智能排序：优先将 Front Cover (typeCode=3) 放在首位
+    if (pictures.length > 1) {
+        pictures.sort((a, b) => {
+            if (a.typeCode === 3) return -1;
+            if (b.typeCode === 3) return 1;
+            if (a.typeCode === 4) return -1;
+            if (b.typeCode === 4) return 1;
+            return 0;
+        });
+    }
+
+    return { 
+        pictures, 
+        coverBlob: pictures.length > 0 ? pictures[0].blob : null, 
+        artist, 
+        title 
+    };
+}
+
+// 辅助功能：本地图片兜底查找 (同名图片或同文件夹名图片)
+function findLocalImageFallback(fileUrl, fileName) {
+    const fileEntry = filesData.find(f => f.url === fileUrl || f.name === fileName);
+    if (!fileEntry) return null;
+    
+    // 兼容不同操作系统的斜杠
+    const sep = fileEntry.path.includes('\\') ? '\\' : '/'; 
+    const dirPath = fileEntry.path.substring(0, fileEntry.path.lastIndexOf(sep) + 1);
+    if (!dirPath) return null;
+    
+    const dirParts = dirPath.split(sep).filter(Boolean);
+    const dirName = dirParts.length > 0 ? dirParts[dirParts.length - 1] : '';
+    const nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+    const imgExts = ['ico','jpe','jpeg','jpg','pcx','png','bmp','gif','webp','svg'];
+    
+    // 1. 同名图片
+    let cover = filesData.find(f => !f.isDir && f.path.startsWith(dirPath) && 
+        imgExts.includes(f.name.split('.').pop().toLowerCase()) && 
+        f.name.substring(0, f.name.lastIndexOf('.')) === nameWithoutExt);
+        
+    // 2. 文件夹名同名图片
+    if (!cover && dirName) {
+        cover = filesData.find(f => !f.isDir && f.path.startsWith(dirPath) && 
+        imgExts.includes(f.name.split('.').pop().toLowerCase()) && 
+        f.name.substring(0, f.name.lastIndexOf('.')) === dirName);
+    }
+        // 2. 文件夹内cover名图片
+    if (!cover ) {
+        cover = filesData.find(f => !f.isDir && f.path.startsWith(dirPath) && 
+        imgExts.includes(f.name.split('.').pop().toLowerCase()) && 
+        f.name.substring(0, f.name.lastIndexOf('.')) === 'cover');
+    }
+    return cover ? cover.url : null;
+}
+
+
+
+
+
+
+
+
+function navigateMedia(dir) {
+    if (currentMediaPlaylist.length === 0) return;
+    currentMediaIdx = (currentMediaIdx + dir + currentMediaPlaylist.length) % currentMediaPlaylist.length;
+    const item = currentMediaPlaylist[currentMediaIdx];
+    openMediaGallery(item.url, item.ext, item.fileName, item.token);
+}
+
+
+
+
+
+// 触发截图按钮逻辑（保留 3 个参数并推入 uploadQueue）
+function handleCaptureClick(e) {
+    if (e) e.stopPropagation();
+    const video = document.getElementById('lb-video');
+    const currentMedia = mediaList[currentMediaIndex];
+    if (video && currentMedia) {
+        captureVideoFrame(video, currentMedia.name, currentMedia.token);
+    }
+}
+
+
+
+/**
+ * 格式化视频当前播放时间为：时分秒.两位小数（至少6位整数数字，如 000123.45）
+ */
+function formatVideoTime(seconds) {
+    if (isNaN(seconds) || seconds < 0) seconds = 0;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    
+    const hStr = String(h).padStart(2, '0');
+    const mStr = String(m).padStart(2, '0');
+    const sStr = s.toFixed(2).padStart(5, '0'); // 确保秒数个位前补0（如 "05.20"）
+    
+    return `${hStr}${mStr}${sStr}`; // 格式：HHMMSS.ss
+}
+
+/**
+ * 格式化实际系统当前时间为：时分秒.两位小数（6位整数数字，如 143015.82）
+ */
+function formatRealTime() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const sStr = String(now.getSeconds()).padStart(2, '0');
+    
+    return `${h}${m}${sStr}`; // 格式：HHMMSS
+}
+
+
+
+// 截取视频当前帧核心函数（保留 3 个完整参数，排队上传）
+function captureVideoFrame(video, fileName, token) {
+    if (!video || video.readyState < 2) {
+        showToast('⚠️ 视频尚未就绪，无法截取当前帧');
+        return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const baseName = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+// 1. 视频当前时分秒 (如 "000123.45")
+    const videoTimeStr = formatVideoTime(video.currentTime);
+    // 2. 实际系统当前时分秒 (如 "143015")
+    const realTimeStr = formatRealTime();
+
+    const snapName = `${baseName}_${videoTimeStr}_${realTimeStr}.png`;
+
+    canvas.toBlob((blob) => {
+        if (!blob) {
+            showToast('❌ 截图生成失败');
+            return;
+        }
+
+        const targetToken = token || 'default';
+        const uploadFile = new File([blob], snapName, { type: 'image/png' });
+
+        // 激活界面上的上传任务控件
+        const btn = document.getElementById('upload-task-btn');
+        if (btn && !hasUploadStarted) {
+            btn.style.display = 'block';
+            hasUploadStarted = true;
+        }
+        hasViewedFinished = false;
+
+        // 推入全局 uploadQueue 排队上传
+        uploadQueue.push({
+            file: uploadFile,
+            name: snapName,
+            size: blob.size,
+            status: 'pending',
+            loaded: 0,
+            targetToken: targetToken,
+            targetFolder: '截图保存',
+            previewUrl: URL.createObjectURL(blob)
+        });
+        totalUpFiles++;
+        totalUpBytes += blob.size;
+
+        renderUploadList();
+
+        if (!isUploadingTask) {
+            startUploadQueue();
+        }
+
+        showToast(`📸 已截取当前帧并推入上传队列：${snapName}`);
+    }, 'image/png');
+}
+
+// 歌词解析与同步播放逻辑
+async function loadLyrics(item) {
+    const lyricsContainer = document.getElementById('lb-lyrics');
+    if (!lyricsContainer) return;
+    lyricsContainer.innerText = '';
+    currentLrcData = [];
+
+    const mediaFileName = (typeof item === 'object' && item.name) ? item.name : '';
+    if (!mediaFileName) {
+        lyricsContainer.innerText = '暂无歌词';
+        return;
+    }
+
+    // 1. 计算同名的 .lrc 文件名
+    const targetLrcName = mediaFileName.replace(/\.[^/.]+$/, ".lrc");
+    let lrcUrl = '';
+
+    // 2. 从全局 filesData 数组中精准查找同名 .lrc 文件，避免 URL 转码死链
+    if (typeof filesData !== 'undefined' && Array.isArray(filesData)) {
+        const lrcFile = filesData.find(f => f.name === targetLrcName);
+        if (lrcFile) {
+            lrcUrl = lrcFile.url || lrcFile.downloadUrl || lrcFile.path || '';
+        }
+    }
+
+    // 3. 兜底方案：若 filesData 未查到，尝试通过当前 mediaUrl 直接替换后缀
+    if (!lrcUrl && item.url) {
+        lrcUrl = item.url.replace(/\.[^/.]+$/, ".lrc");
+    }
+
+    if (!lrcUrl) {
+        lyricsContainer.innerText = '暂无歌词';
+        return;
+    }
+
+    // 4. 请求并解析歌词文件
+    try {
+        const res = await fetch(lrcUrl);
+        if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+        const text = await res.text();
+        currentLrcData = parseLrc(text);
+        if (currentLrcData.length === 0) {
+            lyricsContainer.innerText = '暂无歌词';
+        }
+    } catch (e) {
+        lyricsContainer.innerText = '暂无歌词';
+    }
+}
+
+// 支持同一行包含多个时间戳的 LRC 正则解析与时间排序
+function parseLrc(lrcText) {
+    if (!lrcText) return [];
+    
+    const lines = lrcText.split('\n');
+    const result = [];
+    
+    // 全局匹配 [mm:ss.xx] 或 [mm:ss.xxx] 时间戳
+    const timeRegGlobal = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
+    const timeRegSingle = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+
+    for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        // 提取该行包含的所有时间戳标记
+        const timeMatches = line.match(timeRegGlobal);
+        if (!timeMatches) continue;
+
+        // 剥离所有时间戳，提取纯歌词文本
+        const lyricText = line.replace(timeRegGlobal, '').trim();
+
+        // 遍历每一个时间戳，绑定同一个歌词文本
+        for (const timeStr of timeMatches) {
+            const match = timeRegSingle.exec(timeStr);
+            if (match) {
+                const min = parseInt(match[1], 10);
+                const sec = parseInt(match[2], 10);
+                const msStr = match[3].padEnd(3, '0');
+                const ms = parseInt(msStr, 10);
+                const timeInSeconds = min * 60 + sec + ms / 1000;
+                
+                result.push({ 
+                    time: timeInSeconds, 
+                    txt: lyricText 
+                });
+            }
+        }
+    }
+
+    // 重新按播放时间从小到大（升序）严格排序
+    return result.sort((a, b) => a.time - b.time);
+}
+
+function syncLyrics(currentTime) {
+    const lyricsContainer = document.getElementById('lb-lyrics');
+    if (!currentLrcData || currentLrcData.length === 0) return;
+
+    let curTxt = '';
+    for (let i = 0; i < currentLrcData.length; i++) {
+        if (currentTime >= currentLrcData[i].time) {
+            curTxt = currentLrcData[i].txt;
+        } else {
+            break;
+        }
+    }
+    if (curTxt) lyricsContainer.innerText = curTxt;
+}
+
+// 拦截并修复关闭事件，以确保关闭播放和恢复原画廊按钮
+const originalCloseGallery = window.closeGallery;
+window.closeGallery = function(e, force) {
+    const video = document.getElementById('gallery-video');
+    const audio = document.getElementById('gallery-audio');
+    if (video) video.pause();
+    if (audio) audio.pause();
+    
+    // 恢复原有图片画廊和隐藏按钮状态
+    document.querySelectorAll('.lb-prev, .lb-next, .lb-counter').forEach(el => el.style.display = 'block');
+    document.querySelector('.lb-rotate-btn').classList.remove('hide-for-media');
+    
+    if (typeof originalCloseGallery === 'function') {
+        originalCloseGallery(e, force);
+    } else {
+        document.getElementById('lightbox').style.display = 'none';
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * 判断触发目标是否属于“黑色背景区域”
+ * （排除了按钮、音视频播放器、控制面板、歌词框等交互控件）
+ */
+function isBackgroundTarget(target) {
+    if (!target) return false;
+    // 如果点击在按钮、音视频控件、控制面板、歌词或计数器上，则不视为背景
+    const isInteractive = target.closest(
+        'button, video, audio, .lb-controls-panel, .lyrics-container, .lb-counter, input, a, .lb-ctrl-btn'
+    );
+    return !isInteractive;
+}
+/**
+ * 初始化画廊手势监听（包括双击/双触背景退出、滑动切换）
+ */
+function initGalleryGestures() {
+    const lightbox = document.getElementById('lightbox');
+    if (!lightbox) return;
+
+    // --- 1. 双击 (PC) / 双触 (移动端) 黑色背景退出画廊 ---
+    
+    // 移动端双触 (Double-Tap) 检测
+    lightbox.addEventListener('touchend', function (e) {
+        if (!isBackgroundTarget(e.target)) return;
+
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastTapTime;
+
+        // 如果两次点击间隔在 300ms 以内，判定为双触
+        if (tapLength < 300 && tapLength > 0) {
+            closeGallery(e, true);
+            e.preventDefault(); // 阻止缩放等默认双击行为
+        }
+        lastTapTime = currentTime;
+    }, { passive: false });
+
+    // 桌面端/鼠标双击 (Double-Click)
+    lightbox.addEventListener('dblclick', function (e) {
+        if (isBackgroundTarget(e.target)) {
+            closeGallery(e, true);
+        }
+    });
+
+    // --- 2. 划动 (Swipe) 左右切换媒体/图片 ---
+
+    lightbox.addEventListener('touchstart', function (e) {
+        if (e.touches.length === 1) { // 仅处理单指触控
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }
+    }, { passive: true });
+
+    lightbox.addEventListener('touchend', function (e) {
+        if (e.changedTouches.length === 1) {
+            touchEndX = e.changedTouches[0].clientX;
+            touchEndY = e.changedTouches[0].clientY;
+            handleSwipeGesture(e);
+        }
+    }, { passive: true });
+}
+
+/**
+ * 划动手势判别逻辑（仅在音视频媒体模式下生效）
+ */
+function handleSwipeGesture(e) {
+
+// ==== 如果是图片画廊模式，跳过全局划动，交由图片轨道原有的跟手拖拽逻辑处理 ====
+    if (typeof currentGalleryMode !== 'undefined' && currentGalleryMode === 'image') {
+        return;
+    }
+    // 忽略在音视频原生进度条、按钮或调节面板上的滑动，避免误触切换
+    if (e.target.closest('button, .lb-controls-panel, audio, video, input, .lb-ctrl-btn')) {
+        return;
+    }
+
+    const deltaX = touchEndX - touchStartX;
+    const deltaY = touchEndY - touchStartY;
+    const minSwipeDistance = 50; // 触发切换的最小滑动距离 (px)
+
+    // 确保以水平位移为主（|deltaX| > |deltaY|），避免斜向操作误触
+    if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaX) > Math.abs(deltaY)) {
+        if (deltaX < 0) {
+            // 向左划动 -> 下一张 / 下一曲
+            navigateGallery(1);
+        } else {
+            // 向右划动 -> 上一张 / 上一曲
+            navigateGallery(-1);
+        }
+    }
+}
+
+// 页面加载完成后自动绑定手势监听
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGalleryGestures);
+} else {
+    initGalleryGestures();
+}
+
+// ==================== 页面状态异常与移动端“后退”安全防护 ====================
+
+// 1. 停止当前所有播放中的媒体
+function stopAllActiveMedia() {
+    const video = document.getElementById('lb-video');
+    const audio = document.getElementById('lb-audio');
+    
+    if (typeof stopAndCleanupMedia === 'function') {
+        stopAndCleanupMedia(video);
+        stopAndCleanupMedia(audio);
+    } else {
+        if (video) { video.pause(); video.src = ''; }
+        if (audio) { audio.pause(); audio.src = ''; }
+    }
+}
+
+// 2. 页面生命周期监听（处理强制后退、切后台、关闭标签页）
+function initPageLifecycleProtection() {
+    // A. 页面卸载/跳页时（移动端后退跳页最常触发）
+    window.addEventListener('pagehide', stopAllActiveMedia, { capture: true });
+    window.addEventListener('beforeunload', stopAllActiveMedia, { capture: true });
+
+    // B. 页面被冻结 (iOS/Android WebKit 进后台机制)
+    window.addEventListener('freeze', stopAllActiveMedia, { capture: true });
+
+    // C. 页面可见性改变（如切到后台或切屏）
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden) {
+            // 如果希望切后台时暂停播放，取消下行注释即可：
+            // stopAllActiveMedia();
+        }
+    });
+
+    // D. 监听浏览器/手机原生的“后退”按钮 (popstate)
+    window.addEventListener('popstate', function(e) {
+        const lightbox = document.getElementById('lightbox');
+        // 如果点击后退时画廊处于打开状态，截断后退行为，优先关闭画廊
+        if (lightbox && lightbox.style.display !== 'none') {
+            stopAllActiveMedia();
+            lightbox.style.display = 'none';
+        }
+    });
+}
+
+// 3. 为画廊叠加 History State（让手机“后退键”变成“关闭画廊”）
+// 建议在 openGallery 和 openMediaGallery 函数的末尾加上这行代码：
+function pushGalleryHistoryState() {
+    if (!history.state || !history.state.lightboxOpen) {
+        history.pushState({ lightboxOpen: true }, '', location.href);
+    }
+pushGalleryHistoryState();
+}
+
+// 4. DOM 异常显示监控（防止 DOM 被隐式隐藏但声音仍在播放）
+function initLightboxObserver() {
+    const lightbox = document.getElementById('lightbox');
+    if (!lightbox) return;
+
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                // 如果画廊被设为了隐藏，强制停止媒体
+                if (lightbox.style.display === 'none') {
+                    stopAllActiveMedia();
+                }
+            }
+        });
+    });
+
+    observer.observe(lightbox, { attributes: true });
+}
+
+// 执行初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        initPageLifecycleProtection();
+        initLightboxObserver();
+    });
+} else {
+    initPageLifecycleProtection();
+    initLightboxObserver();
+}
+
+// 【新增】1. 监听画廊多媒体播放进度，动态触发保活，防止长视频断线
+window.addEventListener('DOMContentLoaded', () => {
+    const mediaElements = [document.getElementById('lb-video'), document.getElementById('lb-audio')];
+    mediaElements.forEach(media => {
+        if (media) {
+            // timeupdate 在播放时会高频触发
+            media.addEventListener('timeupdate', () => {
+                if (!media.paused && !media.ended) {
+                    // resetTimer 内部已经自带了 >150秒不触发 以及 15秒防抖 限制
+                    resetTimer(); 
+                }
+            });
+        }
+    });
+});
+
+
+
+
+
+
 </script>
 </body>
 </html>
