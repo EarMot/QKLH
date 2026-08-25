@@ -4,10 +4,10 @@
 https://github.com/user-attachments/assets/cfcf698b-4adb-4f13-b4e8-4b8e6d21f04b
 
 
+<img width="989" height="193" alt="image" src="https://github.com/user-attachments/assets/bfbda6e4-6991-4926-bd04-2f0f98471ee5" />
 
 
 
-<img width="944" height="436" alt="image" src="https://github.com/user-attachments/assets/eaf156a7-1ec4-43e1-abb8-e58f4e22391b" />
 已有现成的Quicker动作：局域网链接 - by 沉没的白鲸 - 动作信息 - Quicker  
 https://getquicker.net/Sharedaction?code=d460cc3d-0aea-41ec-c085-08def120d634
 
