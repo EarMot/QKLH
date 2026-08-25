@@ -279,6 +279,22 @@
     margin-top: 4px;
 }
 
+/* 定义一个专用的纯图标按钮类 */
+.pure-icon-btn {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+/* 彻底清除鼠标悬停、点击、聚焦时的默认底色和轮廓 */
+.pure-icon-btn:hover,
+.pure-icon-btn:active,
+.pure-icon-btn:focus {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
 
 
     </style>
@@ -323,7 +339,7 @@
   <div id="lb-media-controls" class="lb-controls-panel" style="display:none;">
     <button id="btn-loop-list" class="lb-ctrl-btn active" onclick="toggleLoopMode('list', event)">🔁 列表循环</button>
     <button id="btn-loop-single" class="lb-ctrl-btn" onclick="toggleLoopMode('single', event)">🔂 单曲循环</button>
-    <button id="btn-capture" class="btn-capture" style="display:none;" onclick="handleCaptureClick(event)">📸 截取当前帧并保存</button>
+    <button id="btn-capture" class="btn-capture" style="display:none;" onclick="handleCaptureClick(event)">📸 截源画面</button>
   </div>
 </div>
 
@@ -408,6 +424,7 @@
               <span id="chat-badge" style="display:none; position:absolute; top:-4px; right:-8px; background:#e53e3e; color:white; border-radius:10px; font-size:11px; padding:1px 5px; font-weight:bold; box-shadow:0 1px 2px rgba(0,0,0,0.2);">0</span>
             </div>
             局域网共享门户
+<button id="btn-screenshot" class="pure-icon-btn" title="截图" style="display: none; font-size: 18px; cursor: pointer; vertical-align: middle; margin-left: 10px;" disabled>📸</button>
         </h2>
         
         <!-- 新增：上传任务控件及包裹容器 -->
@@ -445,7 +462,8 @@
         <button onclick="invertSelection()">反选</button>
         <button class="btn-upload" onclick="triggerUpload('default', '默认目录', this)">📤 上传文件</button>
         <button class="btn-download" onclick="batchDownload()">📦 批量下载</button>
-        
+        <!-- 隐藏的复选框，用于跨沙盒通信 Bridge -->
+<input type="checkbox" id="quickerindexdownload" style="display: none;">
     </div>
     
 
@@ -517,7 +535,114 @@ let myIpId = '未知';
 let activePings = {}; 
 let timerId = null;
 
-function triggerSingleDownload(url) {
+const ACTION_ID = '7bf713d1-6eca-4af0-a80b-08deed4acb64';
+
+/**
+ * 尝试通过 URI 唤起 Quicker 处理下载
+ * @param {Object} downloadMap 格式例如：{ "F:\\hlw7.gif": "http://192.168.0.7:8088/..." }
+ * @returns {Promise<boolean>} 返回 true 表示 Quicker 已响应接管，返回 false 表示超时需兜底
+ */
+// 检测是否为支持 Quicker 的 Windows 桌面环境
+function isSupportedQuickerEnv() {
+    // 1. 基础 UA 匹配（拦截未开启电脑模式的普通移动端）
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobileUA) return false;
+
+    // 2. 触控屏/粗指针检测（精准拦截开启“电脑模式”的手机和平板）
+    // 手机开启电脑模式后，UA 虽伪装成 PC，但主输入设备仍是触摸屏 (pointer: coarse)
+    const isTouchDevice = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const hasMultiTouch = navigator.maxTouchPoints && navigator.maxTouchPoints > 2;
+    if (isTouchDevice || hasMultiTouch) {
+        return false;
+    }
+
+    // 3. 系统平台检测：Quicker 仅在 Windows 上运行
+    const isWindows = /Win/i.test(navigator.platform || navigator.userAgent);
+    if (!isWindows) {
+        return false;
+    }
+
+    return true;
+}
+
+function tryQuickerDownload(downloadMap) {
+    return new Promise((resolve) => {
+        const checkbox = document.getElementById('quickerindexdownload');
+
+        // 非 Windows PC 环境（包括开启了“电脑模式”的手机），直接放弃唤起 Quicker
+        if (!isSupportedQuickerEnv()) {
+            resolve(false);
+            return;
+        }
+
+        // 如果页面未放置复选框，直接走兜底
+        if (!checkbox) {
+            resolve(false);
+            return;
+        }
+
+        let isDone = false;
+        checkbox.checked = false; // 重置复选框状态
+
+        // 定义回调：当 Quicker 改变复选框状态时触发
+        const handleQuickerFeedback = () => {
+            if (isDone) return;
+            isDone = true;
+            checkbox.removeEventListener('change', handleQuickerFeedback);
+            resolve(true); // Quicker 成功响应
+        };
+
+        // 监听复选框 change 事件
+        checkbox.addEventListener('change', handleQuickerFeedback);
+
+        // 构造 JSON 并唤起 Quicker
+        try {
+            const jsonStr = JSON.stringify(downloadMap);
+            const encodedJsonStr = encodeURIComponent(jsonStr);
+            const actionUrl = `quicker:runaction:${ACTION_ID}?${encodedJsonStr}`;
+
+            const a = document.createElement('a');
+            a.href = actionUrl;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } catch (err) {
+            console.error('唤起 Quicker 异常:', err);
+        }
+
+        // 500ms 超时处理：若复选框未变化，解绑事件并返回 false 执行兜底
+        setTimeout(() => {
+            if (!isDone) {
+                isDone = true;
+                checkbox.removeEventListener('change', handleQuickerFeedback);
+                resolve(false); // 超时，降级使用浏览器下载
+            }
+        }, 500);
+    });
+}
+
+
+async function triggerSingleDownload(filePath, downloadUrl) {
+    // 1. 组装 JSON 映射结构
+    const downloadMap = {
+        [filePath]: downloadUrl
+    };
+
+    // 2. 优先尝试 Quicker 下载 (500ms)
+    const handledByQuicker = await tryQuickerDownload(downloadMap);
+    if (handledByQuicker) {
+        console.log('单文件下载已由 Quicker 接管');
+        return;
+    }
+
+    // 3. 超时兜底：使用浏览器下载
+    console.log('Quicker 未响应，执行浏览器单文件下载');
+    browserDownloadSingle(downloadUrl);
+}
+
+// 原有浏览器下载逻辑抽离
+function browserDownloadSingle(url) {
     const a = document.createElement('a');
     a.href = url;
     a.download = '';
@@ -525,6 +650,8 @@ function triggerSingleDownload(url) {
     a.click();
     document.body.removeChild(a);
 }
+
+
 
 let recentUploads = [];
 window.onload = () => {
@@ -897,11 +1024,13 @@ function createRow(file, isDir, isChild = false) {
     tr.dataset.name = file.name || '';
     tr.dataset.path = file.path || '';
 
+    const filePath = file.path || file.name;
+    const safefilePath = filePath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const safeName = file.name;
     const safeNameAttr = safeName.replace(/'/g, '‘'); 
     const sizeStr = isDir ? "-" : formatBytes(file.size);
     const downloadUrl = file.url ? `${file.url}?download=true` : '';
-    const dlBtn = isDir ? "" : `<button class="btn-download btn-icon" onclick="triggerSingleDownload('${downloadUrl}')" title="下载文件">⬇</button>`;
+    const dlBtn = isDir ? "" : `<button class="btn-download btn-icon" onclick="triggerSingleDownload('${safefilePath}', '${downloadUrl}')" title="下载文件">⬇</button>`;
     
     const uploadToken = file.uploadToken || file.token;
     let upBtn = "";
@@ -920,8 +1049,8 @@ function createRow(file, isDir, isChild = false) {
         const ext = safeName.includes('.') ? safeName.split('.').pop().toLowerCase() : '';
         let fileIcon = '📄';
         if (['zip', 'rar', '7z', 'tar', 'gz', 'iso'].includes(ext)) fileIcon = '📦';
-        else if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) fileIcon = '🎬';
-        else if (['mp3', 'wav', 'flac', 'aac', 'ape', 'tak'].includes(ext)) fileIcon = '🎵';
+        else if (['mp4', 'webm', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) fileIcon = '🎬';
+        else if (['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'ape', 'tak'].includes(ext)) fileIcon = '🎵';
         else if (['doc', 'docx'].includes(ext)) fileIcon = '📝';
         else if (['xls', 'xlsx', 'csv'].includes(ext)) fileIcon = '📊';
         else if (['ppt', 'pptx'].includes(ext)) fileIcon = '📊';
@@ -932,22 +1061,24 @@ function createRow(file, isDir, isChild = false) {
             previewHtml = `<a href="javascript:void(0)" class="gallery-link" onclick="openGallery('${file.url}', false)"><img src="${file.url}" class="preview"></a>`;
         } 
         // 多媒体音视频走专属媒体画廊，列表预览图使用标准 preview 样式尺寸，留白对齐其它图标
-        else if (['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'aac'].includes(ext)) {
+        else if (['mp4', 'webm', 'flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg'].includes(ext)) {
             const tokenStr = typeof uploadToken !== 'undefined' && uploadToken ? `'${uploadToken}'` : 'null';
-            const isVideo = ['mp4', 'webm', 'ogg'].includes(ext);
+            const isVideo = ['mp4', 'webm'].includes(ext);
             // 默认SVG底图（与现有界面风格一致的微型占位）
             const iconSvg = isVideo 
                 ? "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100%25' height='100%25' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' font-size='40' text-anchor='middle' dy='.3em'%3E%F0%9F%8E%AC%3C/text%3E%3C/svg%3E" 
                 : defaultMusicIcon;
             
             const thumbId = 'thumb_' + Math.random().toString(36).substr(2,9);
+            // 添加文字提示
+            const hoverTip = isVideo ? '播放'+ext+'视频' : '播放'+ext+'音频';
             // 这里使用了你系统原有的 class="preview"，尺寸、留白将自动与其他图片/文件对齐，不再突兀
             previewHtml = `<a href="javascript:void(0)" class="gallery-link" onclick="openMediaGallery('${file.url}', '${ext}', '${safeNameAttr}', ${tokenStr})">
-                <img id="${thumbId}" class="preview" style="object-fit:cover;" src="${iconSvg}">
+                <img id="${thumbId}" class="preview" style="object-fit:cover;" src="${iconSvg}" title="${hoverTip}">
             </a>`;
             
             // 延时异步替换为真实视频帧或FLAC封面，避免阻塞页面渲染
-            if (isVideo || ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ape'].includes(ext)) {
+            if (isVideo || ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ape', 'ogg'].includes(ext)) {
                 setTimeout(() => lazyGenerateMediaThumb(file.url, ext, thumbId, safeName), 300);
             }
         } else {
@@ -959,7 +1090,7 @@ function createRow(file, isDir, isChild = false) {
     }
 
     tr.innerHTML = `
-        <td><input type="checkbox" class="cb-file" ${isDir ? 'disabled' : ''} value="${downloadUrl}" /></td>
+        <td><input type="checkbox" class="cb-file" ${isDir ? 'disabled' : ''} data-path="${filePath}" data-url="${downloadUrl}" value="${downloadUrl}" /></td>
         <td>${previewHtml}</td>
         <td>
             <div class="file-name-title" title="${safeName}" onclick="handleMobileClick(event, '${safeNameAttr}')">${safeName}</div>
@@ -1502,9 +1633,22 @@ function deselectAll() { document.querySelectorAll('.cb-file:not([disabled])').f
 function invertSelection() { document.querySelectorAll('.cb-file:not([disabled])').forEach(cb => cb.checked = !cb.checked); }
 
 async function batchDownload() {
-  const checkboxes = document.querySelectorAll('.cb-file:checked:not([disabled])');
-  if(checkboxes.length === 0) { showToast('⚠️ 请先勾选需要下载的文件！'); return; }
-  showToast(`⏳ 即将下载 ${checkboxes.length} 个文件...\n若无反应请在浏览器弹窗拦截器中允许此网站`, 5000);
+    const downloadMap = {};
+    const selectedCheckboxes = document.querySelectorAll('.cb-file:checked');
+
+    selectedCheckboxes.forEach(cb => {
+        // 通过 dataset 获取 data-path 和 data-url 的值
+        const filePath = cb.dataset.path;
+        const downloadUrl = cb.dataset.url || cb.value;
+
+        if (filePath && downloadUrl) {
+            downloadMap[filePath] = downloadUrl;
+        }
+    });
+
+    if (Object.keys(downloadMap).length === 0) {
+         showToast('⚠️ 请先勾选需要下载的文件！'); return; }
+  showToast(`⏳ 即将下载 ${Object.keys(downloadMap).length} 个文件...\n若无反应请在浏览器弹窗拦截器中允许此网站`, 5000);
   try {
     const res = await fetch(SERVER_URL + 'ping', { method: 'GET', cache: 'no-cache' });
     if (res.status !== 200) throw new Error('Not 200');
@@ -1513,7 +1657,15 @@ async function batchDownload() {
     disableAllActions(); return;
   }
   resetTimer();
-  checkboxes.forEach((cb, index) => {
+
+    // 1. 优先尝试 Quicker 通信下载
+    const handledByQuicker = await tryQuickerDownload(downloadMap);
+    if (handledByQuicker) {
+        return;
+    }
+
+    // 2. 超时降级：执行原有的验证连接与浏览器批量下载逻辑
+  selectedCheckboxes.forEach((cb, index) => {
     setTimeout(() => {
       const a = document.createElement('a'); a.href = cb.value; a.download = '';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -1650,7 +1802,7 @@ async function reconnectServer(isWakeupRetry) {
 
         // 如果是相同主机访问，且目前不是被动作唤醒过后的重试阶段，则尝试触发动作 URI
         if (isHostMachine && !isRetry) {
-            showToast('⚡ 正在尝试触发[局域网链接]重新唤醒服务器...', 3000);
+            showToast('⚡ 正在尝试触发[QKLH]重新唤醒服务器...', 3000);
             
             // 收集当前网页文件列表的原始本地路径
             let fileListStr = '';
@@ -1956,8 +2108,8 @@ function renderUploadList() {
                 icon = `<img src="${t.previewUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #edf2f7;">`;
             } else {
                 let ext = t.name.includes('.') ? t.name.split('.').pop().toLowerCase() : '';
-                if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) icon = '🎬';
-                else if (['mp3', 'wav', 'flac'].includes(ext)) icon = '🎵';
+                if (['mp4', 'webm', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) icon = '🎬';
+                else if (['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'ape', 'tak'].includes(ext)) icon = '🎵';
                 else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) icon = '📦';
                 else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) icon = '🖼️';
             }
@@ -2163,7 +2315,7 @@ function openGallery(imgUrl, isChat = false) {
                        : Array.from(document.querySelectorAll('.gallery-link img.preview'));
     // 如果不是聊天图片，过滤掉属于音视频文件的封面预览图
     if (!isChat) {
-        const mediaExts = ['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'm4a', 'aac'];
+        const mediaExts = ['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'm4a', 'aac', 'ape', 'tak'];
         links = links.filter(img => {
             const row = img.closest('tr');
             if (!row) return true;
@@ -2359,7 +2511,7 @@ function buildChatFileMessageHtml(items) {
         if (['zip', 'rar', '7z', 'tar', 'gz', 'iso'].includes(ext)) fileIcon = '📦';
         else if (['mp4', 'avi', 'mkv', 'mov', 'wmv'].includes(ext)) fileIcon = '🎬';
         else if (isImg) fileIcon = '🖼️';
-        else if (['mp3', 'wav', 'flac'].includes(ext)) fileIcon = '🎵';
+        else if (['ogg', 'mp3', 'wav', 'flac', 'aac', 'ape', 'tak'].includes(ext)) fileIcon = '🎵';
 
         let sizeStr = formatBytes(item.size || 0);
         let dateStr = item.date ? new Date(item.date).toLocaleString() : '-';
@@ -2921,6 +3073,23 @@ fetch(SERVER_URL + 'truststatus').then(r=>r.text()).then(res=>{
          btn.style.backgroundColor = btn.classList.contains('btn-upload') ? '#ed8936' : (btn.classList.contains('btn-download') ? '#48bb78' : '#4299e1');
          if (btn.title.includes('限制') || btn.title.includes('权限')) btn.title = '信任IP特权：已绕过限制';
      });
+
+
+// ==================== 新增逻辑 ====================
+     const screenshotBtn = document.getElementById('btn-screenshot');
+     if (screenshotBtn) {
+         screenshotBtn.style.display = 'inline-block'; // 验证通过后显示按钮
+         screenshotBtn.disabled = false;               // 解除禁用
+         screenshotBtn.onclick = function() {
+             // 在新标签页打开拼接后的地址：SERVER_URL + 'SC'
+             window.open(SERVER_URL + 'SC', '_blank');
+         };
+     }
+     // ==================================================
+
+
+
+
      document.querySelectorAll('input[type="checkbox"]:disabled:not([title*="文件夹"])').forEach(cb => cb.disabled = false);
      document.querySelectorAll('.trust-hidden').forEach(el => el.style.display = '');
   }
@@ -2942,7 +3111,7 @@ function openMediaGallery(mediaUrl, ext, fileName, token) {
     
     // 构建仅包含媒体文件的播放列表
     mediaList = [];
-    const mediaExts = ['mp4', 'webm', 'ogg', 'flac', 'mp3', 'wav', 'm4a', 'aac'];
+    const mediaExts = ['mp4', 'webm', 'flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg'];
     const rows = document.querySelectorAll('#file-list-body tr.file-row');
 
     rows.forEach(row => {
@@ -3032,7 +3201,7 @@ function playMediaItem(index) {
 
     
     if (audioWrapper) audioWrapper.style.display = 'none';
-    const isVideo = ['mp4', 'webm', 'ogg'].includes(item.ext);
+    const isVideo = ['mp4', 'webm'].includes(item.ext);
 
     if (isVideo) {
         // --- 视频模式 ---
@@ -3095,8 +3264,8 @@ function playMediaItem(index) {
 // 缩略图生成与数据获取 
 async function lazyGenerateMediaThumb(url, ext, thumbId, fileName) {
     const imgEl = document.getElementById(thumbId);
-    const isVideo = ['mp4', 'webm', 'ogg'].includes(ext);
-    const isAudio = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ape'].includes(ext);
+    const isVideo = ['mp4', 'webm'].includes(ext);
+    const isAudio = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'ape'].includes(ext);
 
     // 命中缓存则直接复用
     if (globalMediaCache[url] && imgEl && !isVideo) {
