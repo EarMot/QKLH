@@ -9,26 +9,28 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Newtonsoft.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.Windows.Forms;
-//增加断点续传和网络管道破裂（Broken pipe）导致异常处理
+using System.Runtime.InteropServices;
+
 #nullable enable 
-#pragma warning disable CS4014 // 屏蔽异步未 await 警告 兼容V1
-#pragma warning disable CS8602 // 屏蔽解引用可能为空的引用警告
-#pragma warning disable CS8600 // 屏蔽将 null 或可空类型转换为非可空类型警告 
+#pragma warning disable CS4014 // 兼容V1
+#pragma warning disable CS8602
+#pragma warning disable CS8600
 
 public static void Exec(Quicker.Public.IStepContext context)
 {
     
     string caozuo = context.GetVarValue("操作") as string ?? "";
-    var port_Str = context.GetVarValue("端口号").ToString();//通常为 8088数字ToString，
+    var port_Str = context.GetVarValue("端口号").ToString();//通常为 8088数字ToString
     
     if(caozuo == "重置") {
         try {
-        // 向可能存活的幽灵实例发送关闭指令
+        
         using (var client = new System.Net.WebClient()) {
             client.DownloadString("http://127.0.0.1:"+port_Str+"/qkLANfile/shutdown");
         }
@@ -37,8 +39,6 @@ public static void Exec(Quicker.Public.IStepContext context)
     catch {
         // 如果报错，说明原本就没有服务占用 8088 端口，静默忽略即可
     }
-    
-    // 顺手清理当前上下文的新实例
     LocalImageServer.Instance.Reset();
     return;
     }
@@ -50,17 +50,18 @@ public static void Exec(Quicker.Public.IStepContext context)
     string defaultUploadDir = context.GetVarValue("上传目录") as string ?? Path.GetTempPath();
     string filterFile = context.GetVarValue("筛选") as string ?? "";
 
-    //if (palb == null)    {  Console.WriteLine("警告：未能获取到有效的 path_列表");   context.SetVarValue("pa_url_词典", Purlcd);    return;  }
 
     var server = LocalImageServer.Instance;
-    
+
+    // 传递 Quicker 上下文给服务器实例，以便其内部触发截图子程序 ======
+    server.QuickerContext = context;
     server.Content_inline = IsInline;
     server.DefaultUploadDirectory = defaultUploadDir; 
 
-    // --- 权限及配置更新      新增：信任列表传入 ---
+    // --- 权限及配置更新    信任列表传入 ---
     server.TrustList = context.GetVarValue("信任列表") as List<string> ?? new List<string>();
 
-// ====== 新增：加载固定IP用户名词典 ======
+// ======加载固定IP用户名词典 ======
     server.FixedUserNames = context.GetVarValue("固定IP用户名") as Dictionary<string, object>;
 
     string perm = context.GetVarValue("上传下载权限") as string ?? "上传下载";
@@ -74,7 +75,7 @@ public static void Exec(Quicker.Public.IStepContext context)
     server.CustomAlias = context.GetVarValue("自定义域名") as string ?? "";
     server.CustomIP = context.GetVarValue("自定义IP") as string;
 
-// ====== 新增：加载表情常用语到内存 ======
+// ====== 加载表情常用语到内存 ======
     var emojiList = context.GetVarValue("表情常用语列表") as List<string>;
     server.UpdateEmojis(emojiList);
 
@@ -86,7 +87,8 @@ public static void Exec(Quicker.Public.IStepContext context)
     }
 
     if(filterFile !="old"){
-    // ====== 前后端分离：C# 仅负责初始化文件映射模型 ======
+
+
     foreach (string kpa in palb)
     {
         try
@@ -100,26 +102,26 @@ public static void Exec(Quicker.Public.IStepContext context)
     }
     }
     
-    // ====== 前后端分离：C# 获取文本源码作为虚拟网页 ======
-    // 获取 Quicker 中的文本源码
+
+    // 获取 加载 共享门户 SC 屏幕控制网页源码
     string frontendHtmlContent = context.GetVarValue("网页源码") as string ?? "";
     server.VirtualHtmlContent = frontendHtmlContent; 
+    string scHtmlContent = context.GetVarValue("网页源码_sc") as string ?? "";
+    server.ScreenControlHtmlContent = scHtmlContent;
 
     string reportUrl = "";
 
     if (!string.IsNullOrWhiteSpace(server.CustomAlias))
     {
-        // 走自定义域名逻辑
+        // 走自定义域名逻辑，或固定的虚拟路由index
         string aliasClean = server.CustomAlias.Trim('/');
         reportUrl = $"http://{server.EffectiveIP}:{port_Str}/{aliasClean}/";
     }
     else
     {
-        // 没配自定义域名时，我们为其设定一个固定的虚拟路由（例如 /qkLANfile/index）
         reportUrl = $"http://{server.EffectiveIP}:{port_Str}/qkLANfile/index";
     }
 
-    // 将frontendHtmlPath[虚拟网页虚拟网页地址加入字典，键名可以自定义，方便前端或 Quicker 调用
     Purlcd["共享门户"] = reportUrl; 
 
     // 收集所有共享文件的 URL 供前端或 Quicker 使用
@@ -127,18 +129,16 @@ public static void Exec(Quicker.Public.IStepContext context)
     {
         if(File.Exists(kvp.Key) || Directory.Exists(kvp.Key)) 
         {
-            if(filterFile =="fresh" && palb.Contains(kvp.Key)==false && Directory.Exists(kvp.Key) ){ continue;}
+            if(filterFile =="fresh" &&( palb.Contains(kvp.Key)==false || Directory.Exists(kvp.Key)) ){ continue;}
             Purlcd[kvp.Key] = kvp.Value.Url;
         }
     }
 
-    // ====== 启动服务（若未运行） ======
     if (!server.IsRunning)
     {
-        server.Start(port_Str); // 传入用户指定的端口
+        server.Start(port_Str); 
     }else
     {
-        // 【关键修复】：如果服务正在运行（5分钟内追加运行），则刷新存活时间，顺延5分钟
         server.RefreshActivity();
     }
     context.SetVarValue("pa_url_词典", Purlcd);
@@ -153,27 +153,41 @@ public string? CustomIP { get; set; }
 
 // 优先使用自定义IP（如二级网关/公网映射IP），未指定时自动获取本地IPv4
 public string EffectiveIP => !string.IsNullOrWhiteSpace(CustomIP) ? CustomIP.Trim() : NetworkHelper.GetLocalIPv4();
-
-public string Port { get; set; } = "8088";
-// ====== 新增：记录固定IP主机名 和 缓存用户通过URL传入的名字 ======
+    public string Port { get; set; } = "8088";
     public Dictionary<string, object>? FixedUserNames { get; set; }
     private readonly ConcurrentDictionary<string, string> _userNames = new ConcurrentDictionary<string, string>();
-    // 内存文件字典和表情JSON属性
     private readonly ConcurrentDictionary<string, byte[]> _memoryFiles = new ConcurrentDictionary<string, byte[]>();
     private readonly ConcurrentDictionary<string, string> _memoryFileMime = new ConcurrentDictionary<string, string>();
     public string EmojiJson { get; set; } = "[]";
-
     public bool Content_inline { get; set; }
     public string? DefaultUploadDirectory { get; set; }
-    public string? VirtualHtmlContent { get; set; } // 【新增】用于存放纯文本网页源码
+    public string? VirtualHtmlContent { get; set; } 
+    public string? ScreenControlHtmlContent { get; set; }
+    private string? copyHtmlMemoryCache;
+
+    // ====== 截图内存与长轮询控制参数 ======
+    public Quicker.Public.IStepContext? QuickerContext { get; set; }
+    private readonly object _screenshotLock = new object();
+    private byte[]? _screenshotMemory;
+    private string? _screenshotFileName;
+    private DateTime _lastScreenshotCapturedTime = DateTime.MinValue;
+    private DateTime _lastScreenshotRequestTime = DateTime.MinValue;
+    private bool _isScreenshotLoopActive = false;
+    private const int ScreenshotCacheTtlMs = 80; // 两次截图的最小硬间隔（毫秒）
+    private static readonly SemaphoreSlim _screenshotSemaphore = new SemaphoreSlim(1, 1);
+    private TaskCompletionSource<bool>? _currentScreenshotTcs;
+    // ====== TTL 缓存控制属性 ======
+    private bool _isScreenshotLooping = false;
+    private TaskCompletionSource<byte[]>? _screenshotTcs;
+    private TaskCompletionSource<bool> _screenshotRequestedTcs = new TaskCompletionSource<bool>();
+
     // --- 权限与配置属性 ---
     public bool EnableUploading { get; set; } = true;
     public bool EnableDownloads { get; set; } = true;
     public List<string>? AllowedUploadDirectories { get; set; }
     public string? AccessPassword { get; set; }
-    public List<string> TrustList { get; set; } = new List<string>(); // 新增信任列表
+    public List<string> TrustList { get; set; } = new List<string>(); 
     public string? CustomAlias { get; set; }
-
     private static LocalImageServer? _instance;
     private static readonly object _instanceLock = new object();
 
@@ -194,7 +208,7 @@ public string Port { get; set; } = "8088";
     private readonly ConcurrentDictionary<string, string> _tokenToPathMap = new ConcurrentDictionary<string, string>();
     private readonly ConcurrentDictionary<string, string> _pathToTokenMap = new ConcurrentDictionary<string, string>();
 
-    // ====== 【新增】统一的动态文件映射仓库，用于提供 /api/files 数据 ======
+    // ====== 动态文件映射仓库，提供 /api/files 数据 ======
     public class SharedFileInfo {
         public string Path { get; set; } = "";
         public string Url { get; set; } = "";
@@ -207,7 +221,6 @@ public string Port { get; set; } = "8088";
     
     public string? CurrentReportToken { get; set; }
     public string? CurrentReportPath { get; set; }
-
     public bool IsRunning => _isRunning;
     private volatile bool _isRunning = false;
 
@@ -215,25 +228,23 @@ public string Port { get; set; } = "8088";
     private const int ShutdownDelayMs = 300000; 
     private DateTime _lastActivityTime = DateTime.Now; 
     private readonly object _activityLock = new object();
-    // ====== 【新增：聊天记录存储结构】 ======
+    // ====== 聊天记录存储结构 ======
     public class ChatMessage {
         public string Sender { get; set; } = "";
-        public string SenderName { get; set; } = ""; // ====== 新增：包含昵称/设备等完整信息的字段
+        public string SenderName { get; set; } = ""; 
         public string Time { get; set; } = "";
         public string Target { get; set; } = "";
         public string Content { get; set; } = "";
-// 增量获取必须依赖的绝对时间戳
         public long Timestamp { get; set; } = 0;
     }
     private readonly List<ChatMessage> _chatHistory = new List<ChatMessage>();
-    
-    // ====== 【新增】追踪活跃的 action ping 主机与端口 ======
     private readonly ConcurrentDictionary<string, string> _activePingers = new ConcurrentDictionary<string, string>();
 
     public void Reset()
     {
         Stop();
-        
+        _screenshotMemory = null;
+        _screenshotFileName = null; 
         _tokenToPathMap.Clear();
         _pathToTokenMap.Clear();
 SharedFiles.Clear();
@@ -248,7 +259,7 @@ SharedFiles.Clear();
         Console.WriteLine("服务器已彻底重置并强制清理所有映射表及监听器。");
     }
 
-    // ====== 【新增】刷新活跃时间，防止误判超时 ======
+    // ======刷新活跃时间 ======
     public void RefreshActivity()
     {
         lock (_activityLock) 
@@ -257,7 +268,7 @@ SharedFiles.Clear();
         }
     }
 
-    public void Start(string portStr) // 接收外部传入的端口
+    public void Start(string portStr) 
 {
     if (_listener != null) return;
     if (!HttpListener.IsSupported) return;
@@ -268,14 +279,11 @@ SharedFiles.Clear();
     _listener = new HttpListener();
     _listener.Prefixes.Add(BaseUrl);
     if (!string.IsNullOrWhiteSpace(CustomAlias)) _listener.Prefixes.Add($"http://+:{portStr}/{CustomAlias.Trim('/')}/");
-
     try
     {
         _listener.Start();
         _isRunning = true;
-
         RefreshActivity();
-
         Console.WriteLine($"本地服务已启动，监听于 {BaseUrl}...");
         _shutdownTimer = new System.Threading.Timer(CheckForIdleShutdown, null, 0, 120000); 
         Task.Run(() => ProcessRequests());
@@ -284,9 +292,7 @@ SharedFiles.Clear();
     {
         _listener = null;
         _isRunning = false;
-        // 动态提示具体的端口号
         MessageBox.Show($"本地服务启动失败！可能是 {portStr} 端口被其他程序占用，或者旧服务未彻底关闭。\n\n系统报错:\n{ex.Message}", "启动错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        
         throw new Exception("服务器启动失败，终止动作。");
     }
 }
@@ -295,7 +301,7 @@ SharedFiles.Clear();
 {
     if (string.IsNullOrWhiteSpace(alias)) return;
     alias = alias.Trim('/');
-    string prefix = $"http://+:{portStr}/{alias}/"; // 替换为动态端口
+    string prefix = $"http://+:{portStr}/{alias}/"; 
     if (_listener != null && _listener.IsListening)
     {
         if (!_listener.Prefixes.Contains(prefix))
@@ -315,7 +321,6 @@ SharedFiles.Clear();
             try
             {
                 HttpListenerContext context = await listener.GetContextAsync(); 
-                // ====== 【修改】转交异步方法以支持长轮询不阻塞 ======
                 _ = HandleRequestAsync(context);
             }
             catch { break; }
@@ -325,26 +330,22 @@ SharedFiles.Clear();
 private string GetRichIdentity(HttpListenerRequest request, string remoteIp, string senderId)
     {
         List<string> tags = new List<string>();
-
-        // a. 用户输入 (捕获 URL 参数 ?user=xxx 或 ?name=xxx，参考 inline 的写法)
+        // a. 用户输入  ?name=xxx
         string? userInput = request.QueryString["user"] ?? request.QueryString["name"];
         if (!string.IsNullOrWhiteSpace(userInput)) 
         {
-            _userNames[remoteIp] = userInput.Trim(); // 只要访问过一次带参数的URL，就根据IP永久记住该昵称
+            _userNames[remoteIp] = userInput.Trim(); 
         }
         if (_userNames.TryGetValue(remoteIp, out string? savedName) && !string.IsNullOrWhiteSpace(savedName))
         {
             tags.Add(savedName);
         }
 
-        // b. 主机设置词典 (通过最后一段 IP 匹配)
         if (FixedUserNames != null && FixedUserNames.TryGetValue(senderId, out object? dictNameObj) && dictNameObj != null)
         {
             string dictName = dictNameObj.ToString() ?? "";
             if (!string.IsNullOrWhiteSpace(dictName)) tags.Add(dictName);
         }
-
-        // c. 设备信息 (通过 User-Agent 嗅探)
         string ua = request.Headers["User-Agent"] ?? "";
         string device = "";
         if (ua.Contains("Windows NT")) device = "🖥️PC";
@@ -353,55 +354,44 @@ private string GetRichIdentity(HttpListenerRequest request, string remoteIp, str
         else if (ua.Contains("iPad")) device = "📱iPad";
         else if (ua.Contains("Mac OS X")) device = "💻Mac";
         else if (ua.Contains("Linux")) device = "🐧Linux";
-        
         if (!string.IsNullOrEmpty(device)) tags.Add(device);
-
         // 将组装好的标签用斜杠拼接，例如：12 (刘一/🖥️PC)
         if (tags.Count > 0)
             return $"{senderId} ({string.Join("/", tags)})";
-            
         return senderId;
     }
 
-    // ====== 【重点修改】异步的 HTTP 处理方法 ======
+    // ====== 异步的 HTTP 处理方法 ======
     private async Task HandleRequestAsync(HttpListenerContext context)
     {
         HttpListenerRequest request = context.Request;
         HttpListenerResponse response = context.Response;
 
-        // ====== 【功能1：身份识别与信任列表】 仅需最后1位数字即可信任======
+        // ====== 身份识别与本地，信任列表 仅需最后1位数字即可信任======
         string remoteIp = request.RemoteEndPoint.Address.ToString();
         string localIp = EffectiveIP;
         string senderId = remoteIp.Split('.').Last();
         
-        // ====== 【新增：解析并生成多维身份标识】 ======
         string richSenderName = GetRichIdentity(request, remoteIp, senderId);
-        // 判断是否本地，或者在信任列表中
         bool isTrusted = remoteIp == "127.0.0.1" || remoteIp == "::1" || remoteIp == localIp || (TrustList != null && (TrustList.Contains(remoteIp) || TrustList.Contains(senderId)));
  
         string urlPath = request.Url?.AbsolutePath ?? "";
         string[] segments = urlPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-// ====== 【修复：统一前缀判定】兼容原版前缀 和 自定义Alias别名（如 /QUICKER） ======
     bool isValidPrefix = segments.Length > 0 && (
         segments[0].Equals("qkLANfile", StringComparison.OrdinalIgnoreCase) || 
         (!string.IsNullOrEmpty(CustomAlias) && segments[0].Equals(CustomAlias.Trim('/'), StringComparison.OrdinalIgnoreCase))
     );
 
-        // ====== 【保活ping逻辑区分刷新闲置倒计时,普通ping不刷新,新增：actionping】 ======
-
-        // ====== 【功能4：actionping 解析】 ======
+        // ====== 保活keepaliveping刷新闲置倒计时,普通ping actionping不刷新======
         if (segments.Length >= 2 && isValidPrefix)
         {
             var match = Regex.Match(segments[1], @"^action(\d+)ping$", RegexOptions.IgnoreCase);
             if (match.Success)
             {
                 string actionPort = match.Groups[1].Value;
-                
-                // 重点1 & 2：分开保存端口，actionping用户记录为 "IP:端口"，避免与普通聊天用户（仅记录IP）冲突
+                // actionping用户记录为 "IP:端口"
                 string ipAndPort = $"{remoteIp}:{actionPort}";
                 _activePingers[ipAndPort] = actionPort;
-
-                // 重点3：返回剩余闲置时间（与普通ping一样，不刷新活跃时间）
                 int remainSec = 0;
                 lock (_activityLock) 
                 { 
@@ -411,17 +401,15 @@ private string GetRichIdentity(HttpListenerRequest request, string remoteIp, str
                 response.StatusCode = 200;
                 response.ContentType = "text/plain; charset=utf-8";
                 byte[] actionMsg = Encoding.UTF8.GetBytes(remainSec.ToString());
-                response.ContentLength64 = actionMsg.Length; // 必须加，防止挂起
+                response.ContentLength64 = actionMsg.Length; 
                 response.OutputStream.Write(actionMsg, 0, actionMsg.Length);
                 response.Close();
 
-                // 如果超时则触发停止
                 if (remainSec <= 0) _ = Task.Run(() => this.Stop());
                 return;
             }
         }
 
-        // ====== 【修改】keepaliveping 返回 JSON 格式数据包含活跃端口 ======
         if (request.HttpMethod == "GET" && urlPath.EndsWith("ping", StringComparison.OrdinalIgnoreCase))
         {
             response.StatusCode = 200;
@@ -436,13 +424,13 @@ private string GetRichIdentity(HttpListenerRequest request, string remoteIp, str
                 response.ContentType = "application/json; charset=utf-8";
                 string pingJson = "{" + string.Join(",", _activePingers.Select(kv => $"\"{kv.Key}\":\"{kv.Value}\"")) + "}";
                 byte[] msg = Encoding.UTF8.GetBytes($"{{\"remain\":{remainSec}, \"actionPings\":{pingJson}}}");
-                response.ContentLength64 = msg.Length; // ！！！必须加这一句，否则浏览器会挂起死等
+                response.ContentLength64 = msg.Length; 
                 response.OutputStream.Write(msg, 0, msg.Length);
             }
             else 
             {
                 byte[] msg = Encoding.UTF8.GetBytes(remainSec.ToString());
-                response.ContentLength64 = msg.Length; // ！！！必须加这一句，否则浏览器会挂起死等
+                response.ContentLength64 = msg.Length; 
                 response.OutputStream.Write(msg, 0, msg.Length);
             }
             response.Close();
@@ -451,13 +439,12 @@ private string GetRichIdentity(HttpListenerRequest request, string remoteIp, str
         }
         // 非一般探测操作均刷新倒计时
         lock (_activityLock) _lastActivityTime = DateTime.Now;
-            
-            // ====== 【新增：幽灵实例自毁接口】 ======
+
+            // ====== 幽灵实例关闭接口 ======
 if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("shutdown", StringComparison.OrdinalIgnoreCase))
 {
     SendError(response, HttpStatusCode.OK, "Server shutting down...");
-    // 延迟 500 毫秒执行 Stop()，确保前面的 OK 响应能成功发给客户端
-    response.Close(); // ！！！强制手动关闭连接，释放发起请求的客户端
+    response.Close(); 
     _ = Task.Run(async () => { 
         await Task.Delay(500); 
         this.Stop(); 
@@ -472,8 +459,6 @@ if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("shutdown", Stri
             response.AddHeader("Access-Control-Allow-Headers", "Content-Type, X-File-Name, X-Chat-Target, X-Chat-Wait, Authorization");
  
             if (request.HttpMethod == "OPTIONS") { response.StatusCode = 204; return; }
-
-
 
             // --- 密码门户验证 (Basic Auth +信任列表绕过) ---
             if (!isTrusted && !string.IsNullOrEmpty(AccessPassword))
@@ -500,7 +485,7 @@ if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("shutdown", Stri
                 }
             }
 
-// ====== 【核心修改】获取完整文件列表数据 API（支持上传权限与目录Token验证） ======
+// ====== 获取完整文件列表数据 API（支持上传权限与目录Token验证） ======
 if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringComparison.OrdinalIgnoreCase) && segments[2].Equals("files", StringComparison.OrdinalIgnoreCase))
 {
     var list = SharedFiles.Values.ToList();
@@ -509,11 +494,7 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
     for (int i = 0; i < list.Count; i++) {
         var f = list[i];
         string escPath = f.Path.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        
-        // 1. 确定当前行项目对应的上传目标目录（文件取其父目录，文件夹取自身）
         string targetDir = f.IsDir ? f.Path : (Path.GetDirectoryName(f.Path) ?? f.Path);
-        
-        // 2. 获取该目标目录对应的 Token（用于上传）
         string uploadToken = f.Token;
         foreach (var kv in _tokenToPathMap)
         {
@@ -524,7 +505,6 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
             }
         }
 
-        // 3. 权限验证：如果用户 IP 在信任列表，或者该目录在限定的上传范围内，则允许上传
         bool canUpload = isTrusted || IsPathAllowedForUpload(targetDir,AllowedUploadDirectories);
 
         sbJson.Append($"{{\"name\":\"{Path.GetFileName(f.Path)}\",\"path\":\"{escPath}\",\"url\":\"{f.Url}\",\"isDir\":{f.IsDir.ToString().ToLower()},\"size\":{f.Size},\"date\":{f.DateTicks},\"token\":\"{f.Token}\",\"uploadToken\":\"{uploadToken}\",\"canUpload\":{canUpload.ToString().ToLower()}}}");
@@ -538,7 +518,7 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
     return;
 }
 
-// 在 HandleRequestAsync 里原 /api/files 下方，增加获取表情的 API：
+// 获取表情的 API：
 if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringComparison.OrdinalIgnoreCase) && segments[2].Equals("emojis", StringComparison.OrdinalIgnoreCase))
 {
     response.ContentType = "application/json; charset=utf-8";
@@ -548,7 +528,62 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
     return;
 }
 
-            // ====== 【功能3：长轮询与增量获取聊天接口】 ======
+// ====== 获取截图 API (支持长轮询触发)】 ======
+if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringComparison.OrdinalIgnoreCase) && segments[2].Equals("screenshot", StringComparison.OrdinalIgnoreCase))
+{
+    if (!isTrusted) {
+        SendError(response, HttpStatusCode.Forbidden, "Untrusted IP for screenshot.");
+        return;
+    }
+
+    //刷新活跃时间戳，并确保后台预抓取流水线正高效运转
+    lock (_screenshotLock) {
+        _lastScreenshotRequestTime = DateTime.Now;
+    }
+    EnsureBackgroundCaptureRunning();
+
+    byte[]? targetBytes = null;
+    string? targetName = null;
+
+    // 1. 判断当前内存图片是否过期（例如超过 1 秒则视为过期旧图）
+    bool isExpired = (DateTime.Now - _lastScreenshotCapturedTime).TotalMilliseconds > 1000;
+ 
+    // 2. 仅在缓存未过期时直接复用内存
+    if (!isExpired) {
+        lock (_screenshotLock) {
+            targetBytes = _screenshotMemory;
+            targetName = _screenshotFileName;
+        }
+    }
+ 
+    // 3. 若无有效缓存或已过期，等待后台最新一帧抓取完成
+    if (targetBytes == null) {
+        TaskCompletionSource<bool>? tcs;
+        lock (_screenshotLock) { tcs = _currentScreenshotTcs; }
+        if (tcs != null) {
+            await Task.WhenAny(tcs.Task, Task.Delay(2000));
+        }
+        lock (_screenshotLock) {
+            targetBytes = _screenshotMemory;
+            targetName = _screenshotFileName;
+        }
+    }
+
+    // 4. 立即输出图片（不清空内存，供该 80ms 时间窗口内所有并发用户复用）
+    if (targetBytes != null) {
+        string shotName = targetName ?? "screenshot.jpg";
+        response.ContentType = "image/jpeg";
+        response.AddHeader("Content-Disposition", $"inline; filename*=UTF-8''{Uri.EscapeDataString(shotName)}");
+        response.AddHeader("X-File-Name", Uri.EscapeDataString(shotName));
+        response.ContentLength64 = targetBytes.Length;
+        await response.OutputStream.WriteAsync(targetBytes, 0, targetBytes.Length);
+    } else {
+        response.StatusCode = 204;
+    }
+    return;
+}
+
+            // ====== 长轮询与增量获取聊天接口 ======
             if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("chat", StringComparison.OrdinalIgnoreCase))
             {
                 // 核心修复：任何请求聊天接口的用户（包括只打开未发言的）均记录在线 IP
@@ -599,9 +634,7 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
                     {
                         await Task.Delay(200);
                         elapsed++;
-                        // 【功能0】：如果是长轮询挂起，期间不断刷新活跃时间，确保服务不被关闭！
                         RefreshActivity(); 
-                        
                         bool hasNew = false;
                         lock (_chatHistory) { 
                             if (_chatHistory.Count > 0 && _chatHistory.Last().Timestamp > lastTime) hasNew = true; 
@@ -609,8 +642,6 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
                         if (hasNew) break;
                     }
                 }
-
-                // 过滤出大于 lastTime 的消息返回
                 string jsonResult = GetVisibleChatMessagesJson(senderId, lastTime);
                 response.ContentType = "application/json; charset=utf-8";
                 byte[] b = Encoding.UTF8.GetBytes(jsonResult);
@@ -646,14 +677,16 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
 // ====== 【功能3：服务器新增剪贴板后台指令】 ======
             if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("clip", StringComparison.OrdinalIgnoreCase))
             {
+                if (!isTrusted) {
+                return;}
                 string action = segments.Length > 2 ? segments[2].ToLower() : "";
                 response.StatusCode = 200;
-                response.ContentType = "text/plain; charset=utf-8";
                 
                 if (action == "get") {
                     string txt = "";
                     Thread t = new Thread(() => { if (Clipboard.ContainsText()) txt = Clipboard.GetText(); });
                     t.SetApartmentState(ApartmentState.STA); t.Start(); t.Join();
+                response.ContentType = "text/plain; charset=utf-8";
                     byte[] b = Encoding.UTF8.GetBytes(txt);
                     response.ContentLength64 = b.Length;
                     response.OutputStream.Write(b, 0, b.Length);
@@ -664,10 +697,188 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
                     string txt = "";
                     Thread t = new Thread(() => { if (Clipboard.ContainsText()) txt = Clipboard.GetText(); });
                     t.SetApartmentState(ApartmentState.STA); t.Start(); t.Join();
+                response.ContentType = "text/plain; charset=utf-8";
                     byte[] b = Encoding.UTF8.GetBytes(txt);
                     response.ContentLength64 = b.Length;
                     response.OutputStream.Write(b, 0, b.Length);
                 }
+// ===== 【新增：getfiledrop 获取剪贴板文件列表映射词典】 =====
+                else if (action == "getfiledrop") {
+                    // 参数1解析（是否发送Ctrl+C）：默认 true
+                    string? p1Str = request.QueryString["p1"] ?? request.QueryString["sendKey"] ?? request.QueryString["copy"];
+                    bool sendKey = true;
+                    if (!string.IsNullOrWhiteSpace(p1Str)) {
+                        p1Str = p1Str.Trim().ToLower();
+                        sendKey = !(p1Str == "false" || p1Str == "0" || p1Str == "no");
+                    }
+
+                    // 参数2解析（是否仅筛选文件）：默认 true
+                    string? p2Str = request.QueryString["p2"] ?? request.QueryString["fileOnly"] ?? request.QueryString["onlyFile"];
+                    bool fileOnly = true;
+                    if (!string.IsNullOrWhiteSpace(p2Str)) {
+                        p2Str = p2Str.Trim().ToLower();
+                        fileOnly = !(p2Str == "false" || p2Str == "0" || p2Str == "no");
+                    }
+
+                    // 1. 如果需要发送快捷键，先执行复制
+                    if (sendKey) {
+                        SendKeys.SendWait("^c");
+                        Thread.Sleep(150); // 延时等待系统将文件路径写入剪贴板
+                    }
+
+                    // 2. 从 STA 线程读取剪贴板中的文件列表
+                    List<string> rawPaths = new List<string>();
+                    Thread t = new Thread(() => {
+                        if (Clipboard.ContainsFileDropList()) {
+                            var files = Clipboard.GetFileDropList();
+                            if (files != null) {
+                                foreach (string? f in files) {
+                                    if (!string.IsNullOrEmpty(f)) rawPaths.Add(f);
+                                }
+                            }
+                        }
+                    });
+                    t.SetApartmentState(ApartmentState.STA);
+                    t.Start();
+                    t.Join();
+
+                    // 3. 根据参数2按文件/目录条件筛选
+                    IEnumerable<string> filteredPaths = fileOnly 
+                        ? rawPaths.Where(p => File.Exists(p)) 
+                        : rawPaths.Where(p => File.Exists(p) || Directory.Exists(p));
+
+                    // 4. 优先复用 _pathToTokenMap，没有则生成新 Token 并加入映射字典
+                    Dictionary<string, string> resultDict = new Dictionary<string, string>();
+                    foreach (string p in filteredPaths) {
+                        // SetImageAndGetUrl 内部会自动判断 _pathToTokenMap 是否已存在该路径对应的 Token，
+                        // 存在则复用现有 Token，不存在则生成新 Token 并写入字典与 SharedFiles
+                        string url = SetImageAndGetUrl(p);
+                        resultDict[p] = url;
+                    }
+
+                    // 5. 序列化为 JSON 字典返回
+                    StringBuilder sbJson = new StringBuilder();
+                    sbJson.Append("{");
+                    int count = 0;
+                    foreach (var kvp in resultDict) {
+                        if (count > 0) sbJson.Append(",");
+                        string escKey = kvp.Key.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                        string escVal = kvp.Value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                        sbJson.Append($"\"{escKey}\":\"{escVal}\"");
+                        count++;
+                    }
+                    sbJson.Append("}");
+
+                    response.StatusCode = 200;
+                    response.ContentType = "application/json; charset=utf-8";
+                    byte[] b = Encoding.UTF8.GetBytes(sbJson.ToString());
+                    response.ContentLength64 = b.Length;
+                    response.OutputStream.Write(b, 0, b.Length);
+                }
+                else if (action == "getselhtml")
+{
+    string text = "";
+    string url = "";
+    string htmlContent = "";
+
+    try
+    {
+        // 1. 模拟 Ctrl+C 复制当前选中内容（同 getsel）
+        SendKeys.SendWait("^c");
+        Thread.Sleep(150); // 等待剪贴板写入完成
+
+        // 2. 获取剪贴板纯文本、HTML
+        Thread clipboardThread = new Thread(() =>
+{
+    try
+    {
+        // 1. 获取纯文本：无参重载所有旧框架都支持，兼容ANSI/Unicode所有纯文本格式
+        if (System.Windows.Forms.Clipboard.ContainsText())
+        {
+            text = System.Windows.Forms.Clipboard.GetText();
+        }
+
+        // 2. 获取HTML内容：旧框架WinForms原生支持TextDataFormat.Html枚举和对应重载
+        if (System.Windows.Forms.Clipboard.ContainsText(System.Windows.Forms.TextDataFormat.Html))
+        {
+            htmlContent = System.Windows.Forms.Clipboard.GetText(System.Windows.Forms.TextDataFormat.Html);
+        }
+    }
+    catch (Exception ex)
+    {
+        // 剪贴板是全局资源，可能被其他进程占用，这里可以做重试或异常处理
+    }
+});
+clipboardThread.SetApartmentState(ApartmentState.STA);
+clipboardThread.Start();
+clipboardThread.Join(); // 同步等待剪贴板操作完成，拿到结果
+
+        // 4. 如果提取到了 HTML 内容，将其映射到内存/HTTP 服务中
+        if (!string.IsNullOrEmpty(htmlContent))
+        {
+            // 生成唯一标识符string htmlId = Guid.NewGuid().ToString("N");
+            
+            // 补全 HTML 页面结构与沙盒防御样式（确保图片自适应、布局不溢出）
+            string fullPageHtml = $@"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=""utf-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>剪贴板 HTML 预览</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #fff;
+            padding: 16px;
+            color: #333;
+            line-height: 1.6;
+            word-break: break-all;
+        }}
+        img, video, iframe {{
+            max-width: 100% !important;
+            height: auto !important;
+        }}
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }}
+        th, td {{
+            border: 1px solid #cbd5e0;
+            padding: 8px;
+            text-align: left;
+        }}
+    </style>
+</head>
+<body>
+    {htmlContent}
+</body>
+</html>";
+
+            // 将 HTML 内容存入内存字典或静态缓存（供 HTTP 服务端路由读取）
+            copyHtmlMemoryCache=fullPageHtml;
+
+            // 5. 生成对应的访问 URL
+            string htmlId = Guid.NewGuid().ToString("N");
+            url = $"http://{EffectiveIP}:{Port}/qkLANfile/copyview/{htmlId}";
+        }else{ copyHtmlMemoryCache=null;}
+    }
+    catch (Exception ex)
+    {
+        // 异常容错处理
+        if (string.IsNullOrEmpty(text)) text = "异常";
+        url = "";
+copyHtmlMemoryCache=null;
+    }
+// 6. 返回 JSON 格式的数据
+var responseObj = new { text, url };
+                    string responsetxt = JsonConvert.SerializeObject(responseObj);
+                response.ContentType = "application/json; charset=utf-8";
+    byte[] copyHtmljsonmsg = Encoding.UTF8.GetBytes(responsetxt);
+    response.ContentLength64 = copyHtmljsonmsg.Length; 
+    response.OutputStream.Write(copyHtmljsonmsg, 0, copyHtmljsonmsg.Length);
+    return;
+}
                 else if (action == "set" && request.HttpMethod == "POST") {
                     using (StreamReader reader = new StreamReader(request.InputStream, request.ContentEncoding))
                     {
@@ -681,8 +892,48 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
                 response.ContentLength64 = b.Length;
                     response.OutputStream.Write(b, 0, b.Length);
                 }
+                // ===== 【新增：setpas 写入剪贴板并模拟 Ctrl+V 粘贴】 =====
+                else if (action == "setpas" && request.HttpMethod == "POST") {
+                    using (StreamReader reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                    {
+                        string txt = reader.ReadToEnd();
+                        if (!string.IsNullOrEmpty(txt)) {
+                            Thread t = new Thread(() => { Clipboard.SetText(txt); });
+                            t.SetApartmentState(ApartmentState.STA); t.Start(); t.Join();
+                            Thread.Sleep(100); // 留出写入缓冲时间
+                            SendKeys.SendWait("^v"); // 模拟 Ctrl+V 粘贴
+                        }
+                    }
+                    byte[] b = Encoding.UTF8.GetBytes("OK");
+                    response.ContentLength64 = b.Length;
+                    response.OutputStream.Write(b, 0, b.Length);
+                }
                 return;
             }
+
+// ====== 【新增：服务器鼠标控制指令接口】 ======
+if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("mouse", StringComparison.OrdinalIgnoreCase))
+{
+    if (!isTrusted) return;
+
+    if (request.HttpMethod == "POST")
+    {
+        using (StreamReader reader = new StreamReader(request.InputStream, request.ContentEncoding))
+        {
+            string scriptText = reader.ReadToEnd();
+            if (!string.IsNullOrEmpty(scriptText))
+            {
+                ExecuteMouseScript(scriptText);
+            }
+        }
+        byte[] b = Encoding.UTF8.GetBytes("OK");
+        response.StatusCode = 200;
+        response.ContentType = "text/plain; charset=utf-8";
+        response.ContentLength64 = b.Length;
+        response.OutputStream.Write(b, 0, b.Length);
+    }
+    return;
+}
 
             // --- 自定义域名/别名路由拦截 ---
             if (!string.IsNullOrEmpty(CustomAlias) && segments.Length > 0 && segments[0].Equals(CustomAlias.Trim('/'), StringComparison.OrdinalIgnoreCase))
@@ -737,6 +988,51 @@ if (segments.Length >= 3 && isValidPrefix && segments[1].Equals("api", StringCom
                     return;
                 }
             }
+
+// 处理请求路由 /qkLANfile/copyview
+            if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("copyview", StringComparison.OrdinalIgnoreCase))
+{
+    
+    if (!string.IsNullOrEmpty(copyHtmlMemoryCache))
+    {
+        byte[] buffer = Encoding.UTF8.GetBytes(copyHtmlMemoryCache);
+        response.ContentType = "text/html; charset=utf-8";
+        response.ContentLength64 = buffer.Length;
+        response.OutputStream.Write(buffer, 0, buffer.Length);
+copyHtmlMemoryCache=null;
+    }
+    else
+    {
+        response.StatusCode = 404;
+    }
+}
+
+// ====== 【新增：Screen Control (SC) 屏幕控制网页路由】 ======
+            if (segments.Length >= 2 && isValidPrefix && segments[1].Equals("sc", StringComparison.OrdinalIgnoreCase))
+            {
+                // 1. 验证信任列表，只有 isTrusted 为 true 才能访问
+                if (!isTrusted) 
+                {
+                    SendError(response, HttpStatusCode.Forbidden, "Access Denied: 您当前的 IP 不在信任列表中，无法访问屏幕控制面板。");
+                    return;
+                }
+
+                // 2. 检查并返回 SC 网页源码
+                if (!string.IsNullOrEmpty(ScreenControlHtmlContent))
+                {
+                    response.ContentType = "text/html; charset=utf-8";
+                    byte[] htmlBytes = Encoding.UTF8.GetBytes(ScreenControlHtmlContent);
+                    response.ContentLength64 = htmlBytes.Length;
+                    response.OutputStream.Write(htmlBytes, 0, htmlBytes.Length);
+                }
+                else
+                {
+                    SendError(response, HttpStatusCode.NotFound, "SC Web page source not configured.");
+                }
+                return; // 结束处理
+            }
+
+
 
 
             // 文件下载与获取流的路由逻辑提取 （注意：如果 URL 带了查询参数，AbsolutePath 不包含 Query，因此 segments 里的 token 不受影响）
@@ -942,6 +1238,100 @@ return;
         }
     }
 
+/// <summary>
+/// 从系统剪贴板 HTML 字符串中提取真实的 HTML 片段
+/// </summary>
+private string ExtractHtmlFragment(string rawHtml)
+{
+    if (string.IsNullOrEmpty(rawHtml)) return "";
+
+    int startIdx = rawHtml.IndexOf("<!--StartFragment-->", StringComparison.OrdinalIgnoreCase);
+    int endIdx = rawHtml.IndexOf("<!--EndFragment-->", StringComparison.OrdinalIgnoreCase);
+
+    if (startIdx != -1 && endIdx != -1 && endIdx > startIdx)
+    {
+        startIdx += "<!--StartFragment-->".Length;
+        return rawHtml.Substring(startIdx, endIdx - startIdx).Trim();
+    }
+
+    // 备用解析：如果没有 Fragment 标记，查找 <html 或 <body 标签
+    int bodyIdx = rawHtml.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
+    if (bodyIdx != -1)
+    {
+        return rawHtml.Substring(bodyIdx);
+    }
+
+    return rawHtml;
+}
+
+// ====== 【新增：维持后台预抓取循环】 ======
+private void EnsureBackgroundCaptureRunning()
+{
+    lock (_screenshotLock) {
+        if (_isScreenshotLoopActive) return;
+        _isScreenshotLoopActive = true;
+    }
+
+    Task.Run(async () => {
+        try {
+            while (true) {
+                // 1. 无人观看不浪费资源：若超过 2 秒没有收到任何截图请求，自动停止后台循环
+                lock (_screenshotLock) {
+                    if ((DateTime.Now - _lastScreenshotRequestTime).TotalSeconds > 2) {
+                        _isScreenshotLoopActive = false;
+                        _screenshotMemory = null;
+                        break;
+                    }
+                }
+
+                // 2. 频次安全阀：确保距上次截图完成的间隔不低于 ScreenshotCacheTtlMs
+                double elapsedMs = (DateTime.Now - _lastScreenshotCapturedTime).TotalMilliseconds;
+                int waitMs = (int)(ScreenshotCacheTtlMs - elapsedMs);
+                if (waitMs > 0) {
+                    await Task.Delay(waitMs);
+                }
+
+                // 3. 在后台预先发起下一次截图操作
+                await TriggerScreenshotAsync();
+            }
+        } finally {
+            lock (_screenshotLock) {
+                _isScreenshotLoopActive = false;
+            }
+        }
+    });
+}
+
+// ====== 【 Quicker 调用的单例触发器】 ======
+private async Task TriggerScreenshotAsync()
+{
+    if (!await _screenshotSemaphore.WaitAsync(0)) return;
+
+    TaskCompletionSource<bool> tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    lock (_screenshotLock) {
+        _currentScreenshotTcs = tcs;
+    }
+
+    try {
+        if (QuickerContext != null) {
+            var myInputs = new Dictionary<string, object> {
+                { "IP", EffectiveIP },
+                { "Port", Port }
+            };
+            
+            var runTask = QuickerContext.RunSpAsync("截图子程序", myInputs);
+            if (await Task.WhenAny(runTask, Task.Delay(2500)) == runTask) {
+                await runTask;
+            }
+        }
+    } catch { 
+        /* 忽略单次异常 */ 
+    } finally {
+        _screenshotSemaphore.Release();
+        tcs.TrySetResult(true);
+    }
+}
+
 private string GetVisibleChatMessagesJson(string senderId, long lastTime)
     {
         List<ChatMessage> listToReturn;
@@ -992,6 +1382,40 @@ private string GetVisibleChatMessagesJson(string senderId, long lastTime)
         
         string targetDir = "";
             bool isMemory = false;
+
+        // ====== 【新增：截图上传专属通道 (存入独立内存)】 ======
+        if (tokenOrAction == "screenshot")
+        {
+            if (!isTrusted) { SendError(response, HttpStatusCode.Forbidden, "Untrusted IP."); return; }
+
+            // 【修改】获取请求头中的文件名，若未携带则使用默认名称
+            string shotfileName = Uri.UnescapeDataString(request.Headers["X-File-Name"] ?? ("screenshot_" + DateTime.Now.ToString("HHmmss") + ".jpg"));
+
+            using (MemoryStream ms = new MemoryStream()) {
+                request.InputStream.CopyTo(ms);
+                byte[] fileBytes = ms.ToArray();
+                
+                lock (_screenshotLock) {
+                _screenshotMemory = fileBytes;
+                _screenshotFileName = shotfileName;
+                _lastScreenshotCapturedTime = DateTime.Now; // 【关键】记录最新的截图完成时刻
+                  }
+                
+                string shotUrl = $"http://{EffectiveIP}:{Port}/qkLANfile/api/screenshot"; 
+                string shotPath = "Memory_Screenshot";
+                long shotSize = fileBytes.Length;
+                long shotTicks = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+
+                // 返回与普通上传一致格式的 JSON，满足子程序运行完成后的合法性验证要求
+                byte[] shotMsg = Encoding.UTF8.GetBytes($"{{\"{shotPath}\":\"{shotUrl}\", \"status\":\"ok\", \"file\":\"{shotfileName}\", \"url\":\"{shotUrl}\", \"size\":{shotSize}, \"date\":{shotTicks}, \"fullPath\":\"{shotPath}\"}}");
+                response.ContentType = "application/json";
+                response.StatusCode = 200;
+                response.ContentLength64 = shotMsg.Length;
+                response.OutputStream.Write(shotMsg, 0, shotMsg.Length);
+            }
+            return; // 结束处理，避免混入普通文件共享队列
+        }
+
         if (tokenOrAction == "default")
         {
             targetDir = DefaultUploadDirectory ?? Path.GetTempPath();
@@ -1088,6 +1512,85 @@ private string GetVisibleChatMessagesJson(string senderId, long lastTime)
         }
     }
 
+    // ====== 【新增：截图触发长轮询机制核心循环】 ======
+    private void StartScreenshotLoopIfNeeded()
+    {
+        lock (_screenshotLock)
+        {
+            if (_isScreenshotLooping) return;
+            _isScreenshotLooping = true;
+        }
+
+        Task.Run(async () => {
+            try {
+                while (true)
+                {
+                    lock (_screenshotLock) {
+                        // 如果没有再收到长轮询请求2秒之后清空截图内存并结束循环
+                        if ((DateTime.Now - _lastScreenshotCapturedTime).TotalMilliseconds > 2000) {
+                            _screenshotMemory = null;
+                            _screenshotFileName = null; // 【新增】清空文件名
+                            break; 
+                        }
+                    }
+
+                    _screenshotTcs = new TaskCompletionSource<byte[]>();
+
+                    // 1. 准备给子程序的东西 (输入参数)
+                    if (QuickerContext != null)
+                    {
+                        var myInputs = new Dictionary<string, object> {
+                            { "IP", EffectiveIP },
+                            { "Port", Port }
+                        };
+                        
+                        try {
+                            // 2. 呼叫子程序触发截图
+                            var resultTask = QuickerContext.RunSpAsync("截图子程序", myInputs);
+                            
+                            // 等待截图产生（此时子程序会往 /upload/screenshot 发请求）
+                            var uploadTask = _screenshotTcs.Task;
+                            await Task.WhenAny(resultTask, uploadTask, Task.Delay(3000));
+                            
+                            if (resultTask.IsCompleted && !resultTask.IsFaulted) {
+                                var result = resultTask.Result;
+                                // 3. 子程序返回上传结果，提取 output验证结果
+                                if (result != null && result.ContainsKey("output")) 
+                                {
+                                    var outputValue = result["output"]?.ToString();
+                                    if (string.IsNullOrWhiteSpace(outputValue)) {
+                                        // 子程序运行完了，但没返回 output 变量:终止截图
+                                        break;
+                                    }
+                                }
+                                else {
+                                    // 没返回 output 变量:终止截图
+                                    break;
+                                }
+                            }
+                        } 
+                        catch {
+                            // 出错了:终止截图
+                            break;
+                        }
+                    }
+
+                    // 替换掉原本的 await Task.Delay(100);
+                    // 只要前端一发请求，这里会瞬间通行，进入下一次截图！只要 _screenshotRequestedTcs 没被触发，循环就会在这里安静等待，不消耗任何 CPU。 (加入 WhenAny 2000ms 的目的是：如果没有请求，也能每 2 秒醒来一次判断是否该自动退出了)
+                    await Task.WhenAny(_screenshotRequestedTcs.Task, Task.Delay(2000));
+                    
+                    // 重置请求信号旗，为下一帧的等待做准备
+                    _screenshotRequestedTcs = new TaskCompletionSource<bool>();
+                }
+            }
+            finally {
+                lock (_screenshotLock) {
+                    _isScreenshotLooping = false;
+                }
+            }
+        });
+    }
+
     public void Stop()
     {
         if (_isRunning)
@@ -1111,6 +1614,8 @@ private string GetVisibleChatMessagesJson(string senderId, long lastTime)
             _memoryFileMime.Clear();
             _activePingers.Clear();
             EmojiJson = "[]";
+            _screenshotMemory = null;
+            _screenshotFileName = null; // 【新增】
         }
     }
 
@@ -1259,6 +1764,127 @@ public void UpdateEmojis(List<string>? list)
             catch { return "127.0.0.1"; }
         }
     }
+
+    // ====== 【新增：Win32 鼠标 API 声明与解析执行方法】 ======
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+
+// 鼠标事件标志常量
+    private const int MOUSEEVENTF_MOVE = 0x0001; // ===== 【新增：鼠标移动消息】 =====
+    private const int MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const int MOUSEEVENTF_LEFTUP = 0x0004;
+    private const int MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    private const int MOUSEEVENTF_RIGHTUP = 0x0010;
+    private const int MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    private const int MOUSEEVENTF_MIDDLEUP = 0x0040;
+    private const int MOUSEEVENTF_WHEEL = 0x0800;
+    private const int MOUSEEVENTF_HWHEEL = 0x01000;
+
+    public static void ExecuteMouseScript(string rawScript)
+    {
+        if (string.IsNullOrEmpty(rawScript)) return;
+
+        string[] scriptLines = rawScript.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var rawLine in scriptLines)
+        {
+            string line = rawLine.Trim();
+            if (string.IsNullOrEmpty(line) || line.StartsWith("//")) continue;
+
+            var parts = line.Split(new[] { ':' }, 2);
+            string cmd = parts[0].ToUpper();
+            string arg = parts.Length > 1 ? parts[1].Trim() : "";
+
+            switch (cmd)
+            {
+                case "DL": // 等待时间 (毫秒)
+                    if (int.TryParse(arg, out int ms))
+                    {
+                        Thread.Sleep(ms);
+                    }
+                    break;
+
+                case "MVP": // 鼠标移动到指定坐标
+                    var coords = arg.Split(',');
+                    if (coords.Length == 2 && int.TryParse(coords[0], out int x) && int.TryParse(coords[1], out int y))
+                    {
+                        SetCursorPos(x, y);
+                        // 【核心修复】：SetCursorPos 不会触发 WM_MOUSEMOVE 消息，网页和 Excel 拖选必须依赖此事件！
+                        mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0);
+                    }
+                    break;
+
+                case "MD": // 鼠标按下
+                    HandleMouseAction(arg, "DOWN");
+                    break;
+
+                case "MU": // 鼠标抬起
+                    HandleMouseAction(arg, "UP");
+                    break;
+
+                case "MC": // 鼠标点击
+                    HandleMouseAction(arg, "CLICK");
+                    break;
+
+                case "MW": // 垂直滚轮滚动
+                    if (int.TryParse(arg, out int vScroll))
+                    {
+                        mouse_event(MOUSEEVENTF_WHEEL, 0, 0, vScroll * 4, 0);
+                    }
+                    break;
+
+                case "MH": // 水平滚轮滚动
+                    if (int.TryParse(arg, out int hScroll))
+                    {
+                        mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, hScroll * 4, 0);
+                    }
+                    break;
+            }
+        }
+    }
+
+    private static void HandleMouseAction(string buttonType, string action)
+    {
+        if (string.IsNullOrEmpty(buttonType)) buttonType = "Left";
+
+        int downFlag = MOUSEEVENTF_LEFTDOWN;
+        int upFlag = MOUSEEVENTF_LEFTUP;
+
+        string bt = buttonType.ToLower();
+        if (bt == "right")
+        {
+            downFlag = MOUSEEVENTF_RIGHTDOWN;
+            upFlag = MOUSEEVENTF_RIGHTUP;
+        }
+        else if (bt == "middle")
+        {
+            downFlag = MOUSEEVENTF_MIDDLEDOWN;
+            upFlag = MOUSEEVENTF_MIDDLEUP;
+        }
+
+        if (action == "DOWN")
+        {
+            mouse_event(downFlag, 0, 0, 0, 0);
+            // 【核心修复】：按下后暂停 30ms，给 Excel/网页 UI 线程建立鼠标捕获(Mouse Capture)的时间
+            Thread.Sleep(30);
+        }
+        else if (action == "UP")
+        {
+            mouse_event(upFlag, 0, 0, 0, 0);
+            Thread.Sleep(30);
+        }
+        else if (action == "CLICK")
+        {
+            mouse_event(downFlag, 0, 0, 0, 0);
+            Thread.Sleep(30);
+            mouse_event(upFlag, 0, 0, 0, 0);
+        }
+    }
+//====鼠标 API END==========
+
 }
 
 
